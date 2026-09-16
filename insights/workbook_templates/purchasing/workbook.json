@@ -41,6 +41,31 @@
 								"value": 1
 							}
 						]
+					},
+					{
+						"type": "join",
+						"join_type": "left",
+						"table": {
+							"type": "table",
+							"data_source": "Site DB",
+							"table_name": "tabCompany"
+						},
+						"select_columns": [
+							{
+								"type": "column",
+								"column_name": "default_currency"
+							}
+						],
+						"join_condition": {
+							"left_column": {
+								"type": "column",
+								"column_name": "company"
+							},
+							"right_column": {
+								"type": "column",
+								"column_name": "name"
+							}
+						}
 					}
 				]
 			},
@@ -140,6 +165,31 @@
 								"value": 1
 							}
 						]
+					},
+					{
+						"type": "join",
+						"join_type": "left",
+						"table": {
+							"type": "table",
+							"data_source": "Site DB",
+							"table_name": "tabCompany"
+						},
+						"select_columns": [
+							{
+								"type": "column",
+								"column_name": "default_currency"
+							}
+						],
+						"join_condition": {
+							"left_column": {
+								"type": "column",
+								"column_name": "company"
+							},
+							"right_column": {
+								"type": "column",
+								"column_name": "name"
+							}
+						}
 					}
 				]
 			},
@@ -203,6 +253,31 @@
 						]
 					},
 					{
+						"type": "join",
+						"join_type": "left",
+						"table": {
+							"type": "table",
+							"data_source": "Site DB",
+							"table_name": "tabCompany"
+						},
+						"select_columns": [
+							{
+								"type": "column",
+								"column_name": "default_currency"
+							}
+						],
+						"join_condition": {
+							"left_column": {
+								"type": "column",
+								"column_name": "company"
+							},
+							"right_column": {
+								"type": "column",
+								"column_name": "name"
+							}
+						}
+					},
+					{
 						"type": "mutate",
 						"new_name": "days_late",
 						"data_type": "Integer",
@@ -217,7 +292,7 @@
 		"charts": {
 			"tc-kpis-spend": {
 				"name": "tc-kpis-spend",
-				"title": "Spend KPIs",
+				"title": "Spend Summary",
 				"workbook": "template-purchasing-overview",
 				"folder": null,
 				"sort_order": 0,
@@ -230,7 +305,8 @@
 							"column_name": "base_net_total",
 							"data_type": "Decimal",
 							"aggregation": "sum",
-							"format": "currency"
+							"format": "currency",
+							"currency_column": "default_currency"
 						},
 						{
 							"measure_name": "Active Suppliers",
@@ -242,19 +318,26 @@
 					"number_column_options": [
 						{
 							"decimal": 2,
-							"shorten_numbers": true
+							"shorten_numbers": true,
+							"comparison": {
+								"source": "previous"
+							}
 						},
 						{
-							"shorten_numbers": false
+							"shorten_numbers": false,
+							"comparison": {
+								"source": "previous"
+							}
 						}
 					],
-					"comparison": true,
 					"sparkline": true,
 					"date_column": {
 						"dimension_name": "posting_date",
 						"column_name": "posting_date",
-						"data_type": "Date",
-						"granularity": "month"
+						"data_type": "Date"
+					},
+					"window": {
+						"grain": "month"
 					},
 					"order_by": [
 						{
@@ -274,7 +357,7 @@
 			},
 			"tc-kpis-po": {
 				"name": "tc-kpis-po",
-				"title": "Purchase Order KPIs",
+				"title": "Purchase Order Summary",
 				"workbook": "template-purchasing-overview",
 				"folder": null,
 				"sort_order": 1,
@@ -293,25 +376,33 @@
 							"column_name": "base_grand_total",
 							"data_type": "Decimal",
 							"aggregation": "avg",
-							"format": "currency"
+							"format": "currency",
+							"currency_column": "default_currency"
 						}
 					],
 					"number_column_options": [
 						{
-							"shorten_numbers": false
+							"shorten_numbers": false,
+							"comparison": {
+								"source": "previous"
+							}
 						},
 						{
 							"decimal": 2,
-							"shorten_numbers": true
+							"shorten_numbers": true,
+							"comparison": {
+								"source": "previous"
+							}
 						}
 					],
-					"comparison": true,
 					"sparkline": true,
 					"date_column": {
 						"dimension_name": "transaction_date",
 						"column_name": "transaction_date",
-						"data_type": "Date",
-						"granularity": "month"
+						"data_type": "Date"
+					},
+					"window": {
+						"grain": "month"
 					},
 					"order_by": [
 						{
@@ -516,7 +607,8 @@
 							"column_name": "base_grand_total",
 							"data_type": "Decimal",
 							"aggregation": "sum",
-							"format": "currency"
+							"format": "currency",
+							"currency_column": "default_currency"
 						}
 					],
 					"order_by": [
@@ -561,7 +653,7 @@
 							"x": 0,
 							"y": 0,
 							"w": 4,
-							"h": 1
+							"h": 2
 						}
 					},
 					{
@@ -583,7 +675,18 @@
 							"x": 4,
 							"y": 0,
 							"w": 4,
-							"h": 1
+							"h": 2
+						}
+					},
+					{
+						"type": "text",
+						"text": "",
+						"layout": {
+							"i": "filter-row-end",
+							"x": 8,
+							"y": 0,
+							"w": 12,
+							"h": 2
 						}
 					},
 					{
@@ -592,21 +695,47 @@
 						"layout": {
 							"i": "item-kpis-spend",
 							"x": 0,
-							"y": 1,
-							"w": 7,
-							"h": 3
-						}
+							"y": 2,
+							"w": 5,
+							"h": 7
+						},
+						"reading": "Spend"
+					},
+					{
+						"type": "chart",
+						"chart": "tc-kpis-spend",
+						"layout": {
+							"i": "item-kpis-spend-2",
+							"x": 5,
+							"y": 2,
+							"w": 5,
+							"h": 7
+						},
+						"reading": "Active Suppliers"
 					},
 					{
 						"type": "chart",
 						"chart": "tc-kpis-po",
 						"layout": {
 							"i": "item-kpis-po",
-							"x": 7,
-							"y": 1,
-							"w": 7,
-							"h": 3
-						}
+							"x": 10,
+							"y": 2,
+							"w": 5,
+							"h": 7
+						},
+						"reading": "PO Count"
+					},
+					{
+						"type": "chart",
+						"chart": "tc-kpis-po",
+						"layout": {
+							"i": "item-kpis-po-2",
+							"x": 15,
+							"y": 2,
+							"w": 5,
+							"h": 7
+						},
+						"reading": "Avg PO Value"
 					},
 					{
 						"type": "chart",
@@ -614,9 +743,9 @@
 						"layout": {
 							"i": "item-spend-trend",
 							"x": 0,
-							"y": 4,
+							"y": 9,
 							"w": 12,
-							"h": 9
+							"h": 23
 						}
 					},
 					{
@@ -625,9 +754,9 @@
 						"layout": {
 							"i": "item-item-group",
 							"x": 12,
-							"y": 4,
+							"y": 9,
 							"w": 8,
-							"h": 9
+							"h": 23
 						}
 					},
 					{
@@ -636,9 +765,9 @@
 						"layout": {
 							"i": "item-top-suppliers",
 							"x": 0,
-							"y": 13,
+							"y": 32,
 							"w": 10,
-							"h": 9
+							"h": 23
 						}
 					},
 					{
@@ -647,9 +776,9 @@
 						"layout": {
 							"i": "item-po-status",
 							"x": 10,
-							"y": 13,
+							"y": 32,
 							"w": 10,
-							"h": 9
+							"h": 23
 						}
 					},
 					{
@@ -658,9 +787,9 @@
 						"layout": {
 							"i": "item-overdue",
 							"x": 0,
-							"y": 22,
+							"y": 55,
 							"w": 20,
-							"h": 9
+							"h": 23
 						}
 					}
 				]

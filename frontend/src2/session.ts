@@ -13,24 +13,30 @@ type SessionUser = {
 	locale: string
 	has_desk_access?: boolean
 	has_demo_data: boolean
-	fiscal_year_start: string
 }
 
 // Settings of the site, not of whoever is reading it. A guest opening a public
 // dashboard gets these and nothing else, so a shared chart prints its amounts
 // the same way the workbook does.
+type CurrencySymbol = { symbol: string; symbol_on_right: boolean }
 type SiteInfo = {
 	country: string
+	/** The day a week is counted from, as `Insights Settings` names it. */
+	week_starts_on: string
+	/** The date a fiscal year starts on, as `Insights Settings` holds it. */
+	fiscal_year_start: string
+	// stands in for a measure that names no currency column
 	currency: string | null
-	currency_symbol: string
-	currency_symbol_on_right: boolean
+	// starts with the site currency; each result adds its codes
+	currency_symbols: Record<string, CurrencySymbol>
 }
 
 const emptySite: SiteInfo = {
 	country: '',
+	week_starts_on: 'Monday',
+	fiscal_year_start: '1995-04-01',
 	currency: null,
-	currency_symbol: '',
-	currency_symbol_on_right: false,
+	currency_symbols: {},
 }
 
 const emptyUser: SessionUser = {
@@ -44,7 +50,6 @@ const emptyUser: SessionUser = {
 	can_download: true,
 	locale: 'en-US',
 	has_demo_data: false,
-	fiscal_year_start: '01-04-2020',
 }
 
 const session = reactive({
@@ -90,10 +95,7 @@ async function fetchSessionInfo() {
 
 async function fetchSiteInfo() {
 	const siteInfo: SiteInfo = await call('insights.api.get_site_info')
-	Object.assign(session.site, {
-		...siteInfo,
-		currency_symbol_on_right: Boolean(siteInfo.currency_symbol_on_right),
-	})
+	Object.assign(session.site, siteInfo)
 }
 
 async function login(email: string, password: string) {
