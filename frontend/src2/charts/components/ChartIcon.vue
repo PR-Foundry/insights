@@ -5,7 +5,6 @@ import {
 	BarChartHorizontal,
 	BatteryMedium,
 	Filter,
-	Grid3x3,
 	Hash,
 	LifeBuoy,
 	LineChart,
@@ -42,8 +41,6 @@ const icon = computed(() => {
 			return Map
 		case 'Sankey':
 			return Share2
-		case 'Heatmap':
-			return Grid3x3
 		default:
 			return BarChart3
 	}
@@ -51,5 +48,5 @@ const icon = computed(() => {
 </script>
 
 <template>
-	<component :is="icon" class="h-4 w-4 text-ink-gray-5" stroke-width="1.5" v-bind="$attrs" />
+	<component :is="icon" class="h-4 w-4 text-ink-gray-6" stroke-width="1.5" v-bind="$attrs" />
 </template>

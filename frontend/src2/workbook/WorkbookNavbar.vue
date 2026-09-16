@@ -2,7 +2,7 @@
 import { Badge } from 'frappe-ui'
 import { inject } from 'vue'
 import ContentEditable from '../components/ContentEditable.vue'
-import { workbookKey } from './workbook_key'
+import { workbookKey } from './workbook'
 import WorkbookNavbarActions from './WorkbookNavbarActions.vue'
 import { PencilIcon, PencilOff, PenOff, ShieldAlert } from 'lucide-vue-next'
 
@@ -17,11 +17,7 @@ const workbook = inject(workbookKey)!
 			<div class="absolute left-0">
 				<slot name="left">
 					<router-link :to="{ path: '/workbook' }">
-						<img
-							src="../assets/insights-logo-new.svg"
-							alt="logo"
-							class="h-7 rounded-4"
-						/>
+						<img src="../assets/insights-logo-new.svg" alt="logo" class="h-7 rounded" />
 					</router-link>
 				</slot>
 			</div>
@@ -32,12 +28,12 @@ const workbook = inject(workbookKey)!
 						text="You have read-only access to this workbook"
 					>
 						<ShieldAlert
-							class="absolute -left-6 h-4 w-4 cursor-pointer text-ink-orange-6"
+							class="absolute -left-6 h-4 w-4 cursor-pointer text-ink-orange-7"
 							stroke-width="1.5"
 						/>
 					</Tooltip>
 					<ContentEditable
-						class="font-medium !text-ink-gray-7"
+						class="rounded-sm font-medium !text-ink-gray-7 focus:ring-2 focus:ring-outline-gray-6 focus:ring-offset-4"
 						:modelValue="workbook.doc.title"
 						placeholder="Untitled Workbook"
 						@returned="workbook.doc.title = $event"

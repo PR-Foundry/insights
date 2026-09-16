@@ -1,13 +1,12 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, watchEffect } from 'vue'
+import { __ } from '../../translation'
 import { FIELDTYPES } from '../../helpers/constants'
 import { DonutChartConfig } from '../../types/chart.types'
-import { ColumnOption, DimensionOption } from '../../types/query.types'
+import { ColumnOption, Dimension, DimensionOption, Measure } from '../../types/query.types'
 import CollapsibleSection from './CollapsibleSection.vue'
-import InlineFormControlLabel from '../../components/InlineFormControlLabel.vue'
 import DimensionPicker from './DimensionPicker.vue'
 import MeasurePicker from './MeasurePicker.vue'
-import NumberFormatSection from './NumberFormatSection.vue'
 
 const props = defineProps<{
 	dimensions: DimensionOption[]
@@ -22,30 +21,47 @@ const config = defineModel<DonutChartConfig>({
 	}),
 })
 
+watchEffect(() => {
+	if (!config.value.label_column) {
+		config.value.label_column = {} as Dimension
+	}
+	if (!config.value.value_column) {
+		config.value.value_column = {} as Measure
+	}
+})
+
 const discrete_dimensions = computed(() =>
 	props.dimensions.filter((d) => FIELDTYPES.DISCRETE.includes(d.data_type)),
 )
 </script>
 
 <template>
-	<CollapsibleSection :title="__('Options')">
+	<CollapsibleSection title="Options">
 		<div class="flex flex-col gap-3 pt-1">
 			<DimensionPicker
-				:label="__('Label')"
+				label="Label"
 				v-model="config.label_column"
 				:options="discrete_dimensions"
 			/>
 			<MeasurePicker
-				:label="__('Value')"
+				label="Value"
 				v-model="config.value_column"
 				:column-options="props.columnOptions"
 			/>
-			<InlineFormControlLabel :label="__('Max segments')" control-width="4rem">
-				<FormControl v-model="config.max_slices" type="number" min="1" placeholder="10" />
-			</InlineFormControlLabel>
-			<Toggle v-model="config.show_inline_labels" :label="__('Inline labels')" />
+			<FormControl
+				v-if="!config.show_inline_labels"
+				v-model="config.legend_position"
+				label="Legend Position"
+				type="select"
+				:options="[
+					{ label: __('Top'), value: 'top' },
+					{ label: __('Bottom'), value: 'bottom' },
+					{ label: __('Left'), value: 'left' },
+					{ label: __('Right'), value: 'right' },
+				]"
+			/>
+			<FormControl v-model="config.max_slices" label="Max Slices" type="number" min="1" />
+			<Toggle v-model="config.show_inline_labels" label="Inline Labels" />
 		</div>
 	</CollapsibleSection>
-
-	<NumberFormatSection :config="config" :sole-measure-name="config.value_column?.measure_name" />
 </template>

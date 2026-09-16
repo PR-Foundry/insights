@@ -1,7 +1,8 @@
-import { call, toast } from 'frappe-ui'
+import { call } from 'frappe-ui'
 import { __ } from '../translation'
 import { reactive, ref } from 'vue'
 import { showErrorToast, toOptions } from '../helpers'
+import { createToast } from '../helpers/toasts'
 import { QueryResultColumn, QueryResultRow } from '../types/query.types'
 
 export type DataSourceTable = {
@@ -38,7 +39,7 @@ export type DataSourceTablePreview = {
 }
 async function fetchTable(
 	data_source: string,
-	table_name: string,
+	table_name: string
 ): Promise<DataSourceTablePreview> {
 	fetchingTable.value = true
 	return call('insights.api.data_sources.get_data_source_table', {
@@ -75,11 +76,17 @@ export async function getRowCount(data_source: string, table_name: string) {
 const updatingDataSourceTables = ref(false)
 async function updateDataSourceTables(data_source: string) {
 	updatingDataSourceTables.value = true
-	toast.info(__('Updating tables for {0}', data_source))
+	createToast({
+		message: `Updating tables for ${data_source}`,
+		variant: 'info',
+	})
 	return call('insights.api.data_sources.update_data_source_tables', { data_source })
 		.then(() => {
 			getTables(data_source)
-			toast.success(__('Tables updated for {0}', data_source))
+			createToast({
+				message: `Tables updated for ${data_source}`,
+				variant: 'success',
+			})
 		})
 		.catch((e: Error) => {
 			showErrorToast(e)
@@ -98,7 +105,7 @@ type TableLink = {
 async function getTableLinks(
 	data_source: string,
 	left_table: string,
-	right_table: string,
+	right_table: string
 ): Promise<TableLink[]> {
 	return call('insights.api.data_sources.get_table_links', {
 		data_source,
@@ -108,11 +115,16 @@ async function getTableLinks(
 }
 
 async function updateTableLinks(data_source: string) {
-	toast.info(__('Updating table links'), {
-		description: __('Updating table links for {0}. This may take a while.', data_source),
+	createToast({
+		title: __('Updating table links'),
+		message: __('Updating table links for {0}. This may take a while.', data_source),
+		variant: 'info',
 	})
 	return call('insights.api.data_sources.update_table_links', { data_source }).then(() => {
-		toast.success(__('Table links updated for {0}', data_source))
+		createToast({
+			message: __('Table links updated for {0}', data_source),
+			variant: 'success',
+		})
 	})
 }
 

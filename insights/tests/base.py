@@ -31,10 +31,7 @@ class InsightsIntegrationTestCase(IntegrationTestCase):
         with as_user("Administrator"):
             cls.before_class()
             if cls.COMMIT_AFTER_CLASS_SETUP:
-                # A suite's fixture rows are read back by a data source's own
-                # connection — Site DB opens its own `ibis.mysql.connect`, which
-                # cannot see this transaction.
-                frappe.db.commit()  # nosemgrep
+                frappe.db.commit()
 
     @classmethod
     def tearDownClass(cls):
@@ -42,9 +39,7 @@ class InsightsIntegrationTestCase(IntegrationTestCase):
             with as_user("Administrator"):
                 cls.after_class()
                 if cls.COMMIT_AFTER_CLASS_TEARDOWN:
-                    # setUpClass committed, so the runner's rollback would leave
-                    # the fixtures behind; the cleanup has to commit too.
-                    frappe.db.commit()  # nosemgrep
+                    frappe.db.commit()
         finally:
             super().tearDownClass()
 
@@ -57,9 +52,7 @@ class InsightsIntegrationTestCase(IntegrationTestCase):
         if self.SAVEPOINT:
             frappe.db.savepoint(self.SAVEPOINT)
         elif self.COMMIT_AFTER_TEST_SETUP:
-            # Same reason as setUpClass: the data source's own connection reads
-            # what before_test seeded.
-            frappe.db.commit()  # nosemgrep
+            frappe.db.commit()
 
     def tearDown(self):
         try:
@@ -68,8 +61,7 @@ class InsightsIntegrationTestCase(IntegrationTestCase):
                 frappe.db.rollback(save_point=self.SAVEPOINT)
             self.after_test()
             if self.COMMIT_AFTER_TEST_TEARDOWN and not self.SAVEPOINT:
-                # setUp committed, so after_test's cleanup has to commit as well.
-                frappe.db.commit()  # nosemgrep
+                frappe.db.commit()
         finally:
             super().tearDown()
 
@@ -90,14 +82,6 @@ class InsightsIntegrationTestCase(IntegrationTestCase):
         clear_cache()
         self.addCleanup(clear_cache)
         self.addCleanup(frappe.db.set_single_value, "Insights Settings", "enable_permissions", original)
-
-    def descriptions(self, result):
-        """The `description` column of a result, sorted.
-
-        The test tables carry one text column, so a sorted list of it is how
-        these suites compare the rows a read returned.
-        """
-        return sorted(row["description"] for row in result["rows"])
 
     def assert_visible_to(self, user, doctype, name, message=None):
         with self.as_user(user):

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Checkbox from '../components/Checkbox.vue'
 import SettingItem from './SettingItem.vue'
 import useSettings from './settings'
 

@@ -1,6 +1,6 @@
-import { toast } from 'frappe-ui'
 import useDocumentResource from '../helpers/resource'
 import { __ } from '../translation'
+import { createToast } from '../helpers/toasts'
 
 let settings = undefined as Settings | undefined
 export default function useSettings() {
@@ -28,9 +28,11 @@ function makeSettings() {
 		disableLocalStorage: true,
 	})
 	_settings.onAfterSave(() =>
-		toast.success(__('Settings Updated'), {
-			description: __('Your settings have been updated successfully'),
-		}),
+		createToast({
+			title: __('Settings Updated'),
+			message: __('Your settings have been updated successfully'),
+			variant: 'success',
+		})
 	)
 	settings = _settings
 	return _settings

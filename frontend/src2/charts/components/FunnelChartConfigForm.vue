@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import AddSlotButton from './AddSlotButton.vue'
-import { computed } from 'vue'
+import { computed, watchEffect } from 'vue'
 import { __ } from '../../translation'
 import { FIELDTYPES } from '../../helpers/constants'
 import { FunnelChartConfig } from '../../types/chart.types'
@@ -14,7 +13,6 @@ import {
 import DraggableList from '../../components/DraggableList.vue'
 import CollapsibleSection from './CollapsibleSection.vue'
 import MeasurePicker from './MeasurePicker.vue'
-import NumberFormatSection from './NumberFormatSection.vue'
 import DimensionPicker from './DimensionPicker.vue'
 
 const props = defineProps<{
@@ -29,6 +27,18 @@ const config = defineModel<FunnelChartConfig>({
 		label_column: {},
 		value_column: {},
 	}),
+})
+
+watchEffect(() => {
+	if (!config.value.measures) {
+		config.value.measures = []
+	}
+	if (!config.value.label_column) {
+		config.value.label_column = {} as Dimension
+	}
+	if (!config.value.value_column) {
+		config.value.value_column = {} as Measure
+	}
 })
 
 // Measures mode is active once any stage has a picked measure. When it isn't,
@@ -49,10 +59,10 @@ const discrete_dimensions = computed(() =>
 </script>
 
 <template>
-	<CollapsibleSection :title="__('Options')">
+	<CollapsibleSection title="Options">
 		<div class="flex flex-col gap-3 pt-1">
 			<div>
-				<p class="mb-1.5 text-xs text-ink-gray-5">{{ __('Stages') }}</p>
+				<p class="mb-1.5 text-xs text-ink-gray-5">Stages</p>
 				<div>
 					<DraggableList v-model:items="config.measures" group="funnel-stages">
 						<template #item="{ item, index }">
@@ -64,32 +74,31 @@ const discrete_dimensions = computed(() =>
 							/>
 						</template>
 					</DraggableList>
-					<AddSlotButton :label="__('Add stage')" @click="addStage" />
+					<button
+						class="mt-1.5 text-left text-xs text-ink-gray-5 hover:underline"
+						@click="addStage"
+					>
+						+ Add stage
+					</button>
 				</div>
 			</div>
 
 			<template v-if="!hasMeasures">
 				<DimensionPicker
-					:label="__('Label')"
+					label="Label"
 					:options="discrete_dimensions"
 					:model-value="config.label_column as Dimension"
 					@update:model-value="config.label_column = $event || ({} as Dimension)"
 				/>
 				<MeasurePicker
-					:label="__('Value')"
+					label="Value"
 					:column-options="props.columnOptions"
 					:model-value="config.value_column as Measure"
 					@update:model-value="config.value_column = $event || ({} as Measure)"
 				/>
 			</template>
+
+			<Toggle v-model="config.show_percentage" :label="__('Show Percentage')" />
 		</div>
 	</CollapsibleSection>
-
-	<!-- One format for the whole funnel, not one per stage: the stages are the
-	     same quantity counted at different points, and v2 prints them against a
-	     single scale. A per-stage override would draw nothing. -->
-	<NumberFormatSection
-		:config="config"
-		:sole-measure-name="hasMeasures ? undefined : config.value_column?.measure_name"
-	/>
 </template>

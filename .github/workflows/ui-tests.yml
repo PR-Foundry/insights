@@ -5,20 +5,10 @@ name: UI
 
 on:
   pull_request:
-    paths-ignore:
-      - 'docs/**'
-      - '**.md'
   workflow_dispatch:
-    inputs:
-      workers:
-        description: Playwright workers
-        default: '4'
-      repeat:
-        description: Runs of each flow, to surface a flake
-        default: '1'
 
 concurrency:
-  group: ui-${{ github.event_name }}-${{ github.event.number || github.ref }}-${{ inputs.workers }}
+  group: ui-${{ github.event_name }}-${{ github.event.number || github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -64,6 +54,27 @@ jobs:
       - name: Add the site to hosts
         run: echo "127.0.0.1 $SITE_NAME" | sudo tee -a /etc/hosts
 
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/*requirements.txt', '**/pyproject.toml', '**/setup.py', '**/setup.cfg') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+            ${{ runner.os }}-
+
+      - name: Get yarn cache directory path
+        id: yarn-cache-dir-path
+        run: echo "dir=$(yarn cache dir)" >> $GITHUB_OUTPUT
+
+      - uses: actions/cache@v4
+        id: yarn-cache
+        with:
+          path: ${{ steps.yarn-cache-dir-path.outputs.dir }}
+          key: ${{ runner.os }}-yarn-${{ hashFiles('**/yarn.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-yarn-
+
       - name: Cache Playwright browsers
         uses: actions/cache@v4
         with:
@@ -99,9 +110,14 @@ jobs:
         env:
           CI: "Yes"
 
-      - name: Run unit tests
+      # `bench build` does not reach the Vue app. `/insights` is served from
+      # `insights/www/_insights.html`, which this build writes, so the suite has
+      # no page to open until it runs.
+      - name: Build the frontend
         working-directory: ${{ env.BENCH_PATH }}/apps/insights/frontend
-        run: yarn test
+        run: |
+          yarn install --frozen-lockfile
+          yarn build
 
       # `frontend/e2e/AGENTS.md` tells an agent that lint refuses a sleep, a
       # conditional and `test.only`. This is what makes that true.
@@ -152,7 +168,7 @@ jobs:
 
       - name: Run Playwright tests
         working-directory: ${{ env.BENCH_PATH }}/apps/insights/frontend
-        run: npx playwright test --workers=${{ inputs.workers || 4 }} --repeat-each=${{ inputs.repeat || 1 }}
+        run: npx playwright test
         env:
           CI: "Yes"
           E2E_BASE_URL: ${{ env.SITE_URL }}

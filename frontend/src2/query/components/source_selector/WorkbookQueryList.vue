@@ -1,10 +1,9 @@
 <script setup lang="ts">
-import { ListView } from 'frappe-ui/experimental'
+import { ListView } from 'frappe-ui'
 import { CheckIcon, SearchIcon, Table2Icon } from 'lucide-vue-next'
 import { computed, h, inject, ref } from 'vue'
 import { QueryTableArgs } from '../../../types/query.types'
-import type { Workbook } from '../../../workbook/workbook'
-import { workbookKey } from '../../../workbook/workbook_key'
+import { Workbook, workbookKey } from '../../../workbook/workbook'
 import { Query } from '../../query'
 import { __ } from '../../../translation'
 

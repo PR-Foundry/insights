@@ -1,6 +1,5 @@
 <script setup lang="tsx">
-import { Avatar, Breadcrumbs } from 'frappe-ui'
-import { ListView } from 'frappe-ui/experimental'
+import { Avatar, Breadcrumbs, ListView } from 'frappe-ui'
 import { PlusIcon, SearchIcon } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
 import CSVIcon from '../components/Icons/CSVIcon.vue'
@@ -100,7 +99,7 @@ const listOptions = ref({
 			key: 'status',
 			prefix: (props: any) => {
 				const color =
-					props.row.status == 'Inactive' ? 'text-ink-gray-4' : 'text-ink-green-5'
+					props.row.status == 'Inactive' ? 'text-ink-gray-4' : 'text-ink-green-6'
 				return <IndicatorIcon class={color} />
 			},
 		},

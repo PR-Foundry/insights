@@ -2,31 +2,33 @@
 import { provide } from 'vue'
 import useDashboard from './dashboard'
 import DashboardItem from './DashboardItem.vue'
-import StaticGridLayout from './StaticGridLayout.vue'
-import LoadingOverlay from '../components/LoadingOverlay.vue'
+import VueGridLayout from './VueGridLayout.vue'
+import { call } from 'frappe-ui'
 
 const props = defineProps<{ dashboard_name: string }>()
 
-// whoever follows the link reads the saved charts, not the config being edited
-const dashboard = useDashboard(props.dashboard_name, true)
+const dashboard_name = await call('insights.api.shared.get_dashboard_name', {
+	dashboard_name: props.dashboard_name,
+})
+
+const dashboard = useDashboard(dashboard_name)
 provide('dashboard', dashboard)
 </script>
 
 <template>
 	<div class="relative flex h-full w-full overflow-hidden">
-		<LoadingOverlay v-if="dashboard.pending" />
 		<div class="flex-1 overflow-y-auto p-4">
-			<StaticGridLayout
+			<VueGridLayout
 				v-if="dashboard.doc.items.length > 0"
 				class="h-fit w-full"
-				:verticalCompact="dashboard.doc.vertical_compact_layout"
-				:items="dashboard.doc.items"
-				:rules="dashboard.cellRules"
+				:cols="20"
+				:disabled="true"
+				:modelValue="dashboard.doc.items.map((item) => item.layout)"
 			>
 				<template #item="{ index }">
 					<DashboardItem :index="index" :item="dashboard.doc.items[index]" />
 				</template>
-			</StaticGridLayout>
+			</VueGridLayout>
 		</div>
 	</div>
 </template>

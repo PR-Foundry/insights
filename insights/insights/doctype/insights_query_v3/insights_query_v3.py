@@ -19,8 +19,6 @@ from insights.insights.doctype.insights_data_source_v3.ibis_utils import (
     IbisQueryBuilder,
     execute_ibis_query,
     get_columns_from_schema,
-    is_carried_currency_column,
-    is_hidden_column,
 )
 from insights.insights.query_utils import (
     extract_query_deps_from_operations,
@@ -31,7 +29,7 @@ from insights.insights.query_utils import (
     table_references,
     transitive_closure,
 )
-from insights.utils import as_text, deep_convert_dict_to_dict, get_currency_symbols
+from insights.utils import as_text, deep_convert_dict_to_dict
 
 
 class InsightsQueryv3(Document):
@@ -161,24 +159,11 @@ class InsightsQueryv3(Document):
                 tables.append(ref)
         return tables
 
-    @property
-    def execution_reference(self):
-        """The query an execution log made by this document names.
-
-        A chart runs through a query document that is never saved, so the log
-        would name a query nobody can look up. It points at the source query
-        instead, the one with reference rows, which is how the data store learns
-        that a table is still being read.
-        """
-        return self.flags.execution_reference or self.name
-
-    def build(self, active_operation_idx=None, use_live_connection=None, force=False):
+    def build(self, active_operation_idx=None, use_live_connection=None):
         builder = IbisQueryBuilder(self, active_operation_idx)
         builder.use_live_connection = (
             use_live_connection if use_live_connection is not None else self.use_live_connection
         )
-        # a script runs while the query is built, so only the builder can skip its cache
-        builder.force = force
         ibis_query = builder.build()
 
         if ibis_query is None:
@@ -196,7 +181,7 @@ class InsightsQueryv3(Document):
         page_size: int = 100,
     ):
         with set_adhoc_filters(adhoc_filters):
-            ibis_query = self.build(active_operation_idx, force=force)
+            ibis_query = self.build(active_operation_idx)
 
         results, time_taken = execute_ibis_query(
             ibis_query,
@@ -205,14 +190,11 @@ class InsightsQueryv3(Document):
             force=force,
             cache_expiry=60 * 10,
             reference_doctype=self.doctype,
-            reference_name=self.execution_reference,
+            reference_name=self.name,
         )
         results = results.to_dict(orient="records")
 
         columns = get_columns_from_schema(ibis_query.schema())
-
-        carried = [c["name"] for c in columns if is_carried_currency_column(c["name"])]
-        codes = {row[name] for name in carried for row in results}
 
         sql = None
         with suppress(Exception):
@@ -225,7 +207,6 @@ class InsightsQueryv3(Document):
             "sql": ibis.to_sql(ibis_query),
             "columns": columns,
             "rows": results,
-            "currency_symbols": get_currency_symbols(codes),
             "time_taken": time_taken,
             "is_aggregated_sql": _sql_has_group_by(sql) if sql else False,
         }
@@ -239,37 +220,15 @@ class InsightsQueryv3(Document):
 
     @insights_whitelist()
     def get_count(self, active_operation_idx: int | None = None, adhoc_filters: dict | None = None):
-        """The authoring client's endpoint for `count_rows`.
-
-        The `Insights User` role belongs to the endpoint a client reaches, not to
-        the computation behind it: a surface that settled its own read before it
-        counts anything calls the plain method instead.
-        """
-        return self.count_rows(active_operation_idx, adhoc_filters)
-
-    def count_rows(
-        self,
-        active_operation_idx: int | None = None,
-        adhoc_filters: dict | None = None,
-        force: bool = False,
-    ):
-        """How many rows the query has, which is `execute`'s other half.
-
-        `force` for the same reason `execute` takes one: the count and the rows
-        are one answer, and they hash to different cache keys, so a caller that
-        forces the rows and not the count can print a page of fresh rows under a
-        stale total.
-        """
         with set_adhoc_filters(adhoc_filters):
             ibis_query = self.build(active_operation_idx)
 
         count_query = ibis_query.aggregate(count=_.count())
         count_results, _time_taken = execute_ibis_query(
             count_query,
-            force=force,
             cache_expiry=60 * 5,
             reference_doctype=self.doctype,
-            reference_name=self.execution_reference,
+            reference_name=self.name,
         )
         total_count = count_results.values[0][0]
         return int(total_count)
@@ -301,10 +260,6 @@ class InsightsQueryv3(Document):
 
         with set_adhoc_filters(adhoc_filters):
             ibis_query = self.build(active_operation_idx)
-
-        hidden = [col for col in ibis_query.columns if is_hidden_column(col)]
-        if hidden:
-            ibis_query = ibis_query.drop(*hidden)
 
         import ibis.expr.datatypes as dt
 
@@ -345,19 +300,6 @@ class InsightsQueryv3(Document):
         limit: int = 20,
         adhoc_filters: dict | None = None,
     ):
-        """The authoring client's endpoint for `distinct_column_values`, gated like `get_count`."""
-        return self.distinct_column_values(
-            column_name, active_operation_idx, search_term, limit, adhoc_filters
-        )
-
-    def distinct_column_values(
-        self,
-        column_name: str,
-        active_operation_idx: int | None = None,
-        search_term: str | None = None,
-        limit: int = 20,
-        adhoc_filters: dict | None = None,
-    ):
         with set_adhoc_filters(adhoc_filters):
             ibis_query = self.build(active_operation_idx)
 
@@ -380,51 +322,10 @@ class InsightsQueryv3(Document):
         return result[column_name].tolist()
 
     @insights_whitelist()
-    def get_column_range(
-        self,
-        column_name: str,
-        active_operation_idx: int | None = None,
-        adhoc_filters: dict | None = None,
-    ):
-        """The authoring client's endpoint for `column_range`, gated like `get_count`."""
-        return self.column_range(column_name, active_operation_idx, adhoc_filters)
-
-    def column_range(
-        self,
-        column_name: str,
-        active_operation_idx: int | None = None,
-        adhoc_filters: dict | None = None,
-    ) -> list | None:
-        """The smallest and largest a numeric column goes, as [min, max].
-
-        What a number filter offers to pick from. A fixed list of round numbers
-        offers 1,000 for a column of percentages and nothing at all for a column
-        of revenues, so the column is asked instead.
-        """
-        with set_adhoc_filters(adhoc_filters):
-            ibis_query = self.build(active_operation_idx)
-
-        column = getattr(_, column_name)
-        range_query = ibis_query.aggregate(min=column.min(), max=column.max())
-        result, _time_taken = execute_ibis_query(
-            range_query,
-            cache_expiry=24 * 60 * 60,
-            reference_doctype=self.doctype,
-            reference_name=self.name,
-        )
-        # `tolist` for the reason `distinct_column_values` ends with it: a frame
-        # hands back the column's own scalar type, and an integer column's is one
-        # the response cannot serialize. A float column's subclasses `float`, so
-        # the whole feature works on prices and fails on quantities.
-        low, high = result["min"].tolist()[0], result["max"].tolist()[0]
-        if low is None or high is None:
-            return None
-        return [low, high]
-
-    @insights_whitelist()
     def get_columns_for_selection(self, active_operation_idx: int | None = None):
         ibis_query = self.build(active_operation_idx)
-        return [c for c in get_columns_from_schema(ibis_query.schema()) if not c.get("hidden")]
+        columns = get_columns_from_schema(ibis_query.schema())
+        return columns
 
     def evaluate_alert_expression(self, expression):
         builder = IbisQueryBuilder(self)

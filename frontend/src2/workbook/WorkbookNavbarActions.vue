@@ -3,8 +3,7 @@ import { GitFork, Share2 } from 'lucide-vue-next'
 import { inject, ref } from 'vue'
 import session from '../session'
 import { __ } from '../translation'
-import type { Workbook } from './workbook'
-import { workbookKey } from './workbook_key'
+import { Workbook, workbookKey } from './workbook'
 import WorkbookLineageDialog from './WorkbookLineageDialog.vue'
 import WorkbookShareDialog from './WorkbookShareDialog.vue'
 
@@ -28,7 +27,7 @@ const showLineageDialog = ref(false)
 		</Button>
 		<Dropdown
 			:button="{ icon: 'lucide-more-horizontal', variant: 'outline' }"
-			align="end"
+			placement="right"
 			:options="[
 				{
 					label: __('View Lineage'),

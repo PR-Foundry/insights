@@ -1,5 +1,6 @@
-import { call, toast } from 'frappe-ui'
+import { call } from 'frappe-ui'
 import { reactive, ref } from 'vue'
+import { createToast } from '../helpers/toasts'
 import { showErrorToast } from '../helpers'
 import { __ } from '../translation'
 
@@ -58,11 +59,13 @@ function inviteUsers(emails: string[]) {
 	return call('insights.api.user.invite_users', { emails: emails.join(',') })
 		.then(() => {
 			getUsers()
-			toast.success(__('Invitation Sent'), {
-				description:
+			createToast({
+				title: __('Invitation Sent'),
+				message:
 					emails.length === 1
 						? __(`Invitation sent to {0}`, emails[0])
 						: __(`Invitations sent to {0} users`, String(emails.length)),
+				variant: 'success',
 			})
 		})
 		.catch((e: Error) => {
@@ -89,8 +92,10 @@ function updateUser(email: string, data: Partial<UpdateUser>) {
 	})
 		.then(() => {
 			getUsers()
-			toast.success(__('User Updated'), {
-				description: __('User updated successfully'),
+			createToast({
+				title: __('User Updated'),
+				message: __('User updated successfully'),
+				variant: 'success',
 			})
 		})
 		.catch((e: Error) => {

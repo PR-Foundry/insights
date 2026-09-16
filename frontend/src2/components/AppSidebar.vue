@@ -60,7 +60,7 @@ import Settings from '../settings/Settings.vue'
 import SidebarLink from './SidebarLink.vue'
 import DemoDataBanner from './DemoDataBanner.vue'
 import UserDropdown from './UserDropdown.vue'
-import { TrialBanner } from '@framework/ui/components/TrialBanner/index.ts'
+import { TrialBanner } from 'frappe-ui/frappe'
 import { __ } from '../translation'
 
 const isSidebarCollapsed = useStorage('insights:sidebarCollapsed', false)

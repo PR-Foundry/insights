@@ -3,18 +3,18 @@ import { inject } from 'vue'
 import Code from '../../components/Code.vue'
 import { copyToClipboard } from '../../helpers'
 import { __ } from '../../translation'
-import { ResultTable } from '../result_table'
+import { Query } from '../query'
 
 const showDialog = defineModel()
 
-const query = inject('query') as ResultTable
+const query = inject('query') as Query
 </script>
 
 <template>
 	<Dialog v-model:open="showDialog" :title="__('Generated SQL')" size="3xl" :dismissable="true">
 		<template #default>
 			<div class="relative">
-				<div class="max-h-[50vh] overflow-y-auto rounded-4 border text-base">
+				<div class="max-h-[50vh] overflow-y-auto rounded border text-base">
 					<Code
 						language="sql"
 						:model-value="query.result.executedSQL"

@@ -15,7 +15,10 @@ wheneverChanges(
 	query,
 	() => {
 		if (query.value) {
-			useQuery(query.value)?.ensureResult()
+			const q = useQuery(query.value)
+			if (q && !q.result.executedSQL) {
+				q.execute()
+			}
 		}
 	},
 	{ immediate: true },
@@ -23,7 +26,7 @@ wheneverChanges(
 </script>
 
 <template>
-	<InlineFormControlLabel :label="__('Query')">
+	<InlineFormControlLabel label="Query">
 		<Combobox
 			class="w-full"
 			:options="props.queries"

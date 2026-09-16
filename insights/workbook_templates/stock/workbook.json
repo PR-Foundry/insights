@@ -30,31 +30,6 @@
 					},
 					{
 						"type": "join",
-						"join_type": "left",
-						"table": {
-							"type": "table",
-							"data_source": "Site DB",
-							"table_name": "tabCompany"
-						},
-						"select_columns": [
-							{
-								"type": "column",
-								"column_name": "default_currency"
-							}
-						],
-						"join_condition": {
-							"left_column": {
-								"type": "column",
-								"column_name": "company"
-							},
-							"right_column": {
-								"type": "column",
-								"column_name": "name"
-							}
-						}
-					},
-					{
-						"type": "join",
 						"join_type": "inner",
 						"table": {
 							"type": "table",
@@ -92,8 +67,7 @@
 							"company",
 							"actual_qty",
 							"valuation_rate",
-							"stock_value",
-							"default_currency"
+							"stock_value"
 						]
 					}
 				]
@@ -132,31 +106,6 @@
 						]
 					},
 					{
-						"type": "join",
-						"join_type": "left",
-						"table": {
-							"type": "table",
-							"data_source": "Site DB",
-							"table_name": "tabCompany"
-						},
-						"select_columns": [
-							{
-								"type": "column",
-								"column_name": "default_currency"
-							}
-						],
-						"join_condition": {
-							"left_column": {
-								"type": "column",
-								"column_name": "company"
-							},
-							"right_column": {
-								"type": "column",
-								"column_name": "name"
-							}
-						}
-					},
-					{
 						"type": "mutate",
 						"new_name": "incoming_value",
 						"data_type": "Decimal",
@@ -185,8 +134,7 @@
 							"actual_qty",
 							"stock_value_difference",
 							"incoming_value",
-							"outgoing_value",
-							"default_currency"
+							"outgoing_value"
 						]
 					}
 				]
@@ -265,31 +213,6 @@
 					},
 					{
 						"type": "join",
-						"join_type": "left",
-						"table": {
-							"type": "table",
-							"data_source": "Site DB",
-							"table_name": "tabCompany"
-						},
-						"select_columns": [
-							{
-								"type": "column",
-								"column_name": "default_currency"
-							}
-						],
-						"join_condition": {
-							"left_column": {
-								"type": "column",
-								"column_name": "company"
-							},
-							"right_column": {
-								"type": "column",
-								"column_name": "name"
-							}
-						}
-					},
-					{
-						"type": "join",
 						"join_type": "inner",
 						"table": {
 							"type": "query",
@@ -341,8 +264,7 @@
 							"stock_value",
 							"last_movement_date",
 							"days_since_movement",
-							"ageing_bucket",
-							"default_currency"
+							"ageing_bucket"
 						]
 					}
 				]
@@ -439,13 +361,13 @@
 							"column_name": "stock_value",
 							"data_type": "Decimal",
 							"aggregation": "sum",
-							"format": "currency",
-							"currency_column": "default_currency"
+							"format": "currency"
 						}
 					],
 					"number_column_options": [
 						{}
 					],
+					"comparison": false,
 					"sparkline": false,
 					"shorten_numbers": true,
 					"decimal": 2,
@@ -467,13 +389,13 @@
 							"column_name": "stock_value_difference",
 							"data_type": "Decimal",
 							"aggregation": "sum",
-							"format": "currency",
-							"currency_column": "default_currency"
+							"format": "currency"
 						}
 					],
 					"number_column_options": [
 						{}
 					],
+					"comparison": false,
 					"sparkline": false,
 					"shorten_numbers": true,
 					"decimal": 2,
@@ -500,6 +422,7 @@
 					"number_column_options": [
 						{}
 					],
+					"comparison": false,
 					"sparkline": false,
 					"shorten_numbers": false,
 					"decimal": 0,
@@ -521,13 +444,13 @@
 							"column_name": "stock_value",
 							"data_type": "Decimal",
 							"aggregation": "sum",
-							"format": "currency",
-							"currency_column": "default_currency"
+							"format": "currency"
 						}
 					],
 					"number_column_options": [
 						{}
 					],
+					"comparison": false,
 					"sparkline": false,
 					"shorten_numbers": true,
 					"decimal": 2,
@@ -795,8 +718,7 @@
 							"column_name": "stock_value",
 							"data_type": "Decimal",
 							"aggregation": "sum",
-							"format": "currency",
-							"currency_column": "default_currency"
+							"format": "currency"
 						},
 						{
 							"measure_name": "days_since_movement",
@@ -840,7 +762,7 @@
 							"x": 0,
 							"y": 0,
 							"w": 4,
-							"h": 2
+							"h": 1
 						}
 					},
 					{
@@ -865,7 +787,7 @@
 							"x": 4,
 							"y": 0,
 							"w": 4,
-							"h": 2
+							"h": 1
 						}
 					},
 					{
@@ -890,7 +812,7 @@
 							"x": 8,
 							"y": 0,
 							"w": 4,
-							"h": 2
+							"h": 1
 						}
 					},
 					{
@@ -899,9 +821,9 @@
 						"layout": {
 							"i": "c-total",
 							"x": 0,
-							"y": 3,
+							"y": 1,
 							"w": 4,
-							"h": 4
+							"h": 3
 						}
 					},
 					{
@@ -910,9 +832,9 @@
 						"layout": {
 							"i": "c-change",
 							"x": 4,
-							"y": 3,
+							"y": 1,
 							"w": 4,
-							"h": 4
+							"h": 3
 						}
 					},
 					{
@@ -921,9 +843,9 @@
 						"layout": {
 							"i": "c-reorder-num",
 							"x": 8,
-							"y": 3,
+							"y": 1,
 							"w": 4,
-							"h": 4
+							"h": 3
 						}
 					},
 					{
@@ -932,9 +854,9 @@
 						"layout": {
 							"i": "c-dead",
 							"x": 12,
-							"y": 3,
+							"y": 1,
 							"w": 4,
-							"h": 4
+							"h": 3
 						}
 					},
 					{
@@ -943,9 +865,9 @@
 						"layout": {
 							"i": "c-by-wh",
 							"x": 0,
-							"y": 7,
+							"y": 4,
 							"w": 10,
-							"h": 20
+							"h": 8
 						}
 					},
 					{
@@ -954,9 +876,9 @@
 						"layout": {
 							"i": "c-by-ig",
 							"x": 10,
-							"y": 7,
+							"y": 4,
 							"w": 10,
-							"h": 20
+							"h": 8
 						}
 					},
 					{
@@ -965,9 +887,9 @@
 						"layout": {
 							"i": "c-ageing",
 							"x": 0,
-							"y": 27,
+							"y": 12,
 							"w": 10,
-							"h": 20
+							"h": 8
 						}
 					},
 					{
@@ -976,9 +898,9 @@
 						"layout": {
 							"i": "c-in-out",
 							"x": 10,
-							"y": 27,
+							"y": 12,
 							"w": 10,
-							"h": 20
+							"h": 8
 						}
 					},
 					{
@@ -987,9 +909,9 @@
 						"layout": {
 							"i": "c-reorder-tbl",
 							"x": 0,
-							"y": 47,
+							"y": 20,
 							"w": 10,
-							"h": 23
+							"h": 9
 						}
 					},
 					{
@@ -998,9 +920,9 @@
 						"layout": {
 							"i": "c-top-items",
 							"x": 10,
-							"y": 47,
+							"y": 20,
 							"w": 10,
-							"h": 23
+							"h": 9
 						}
 					},
 					{
@@ -1011,7 +933,7 @@
 							"x": 12,
 							"y": 0,
 							"w": 8,
-							"h": 2
+							"h": 1
 						}
 					}
 				]

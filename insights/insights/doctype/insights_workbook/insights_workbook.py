@@ -43,12 +43,6 @@ class InsightsWorkbook(Document):
         title: DF.Data
     # end: auto-generated types
 
-    def before_naming(self):
-        # a fixture or export written while this doctype was still `autoincrement` carries a
-        # numeric name, and the column is varchar now — `validate_name` throws on an int
-        if isinstance(self.name, int):
-            self.name = str(self.name)
-
     def autoname(self):
         # plain numbers, carrying on from where `autoincrement` left off — see
         # insights/patches/name_workbooks_as_strings.py for why this needs to be a string.
@@ -89,10 +83,8 @@ class InsightsWorkbook(Document):
         self.db_set("data_backup", None)
 
     def restore_workbook_contents(self, workbook_data, target_workbook_name, ignore_permissions=False):
-        """Restore the workbook's contents, and answer with the name each one took.
-
-        The map is keyed on the name the file carries and valued on the name the
-        copy got, so a caller can reach what it just imported.
+        """
+        Shared method to restore/import workbook contents
         """
         old_workbook_name = workbook_data.get("name")
 
@@ -150,9 +142,7 @@ class InsightsWorkbook(Document):
             new_chart.insert(ignore_permissions=ignore_permissions)
             id_map[name] = new_chart.name
 
-        for old_dashboard_name, dashboard in (
-            workbook_data.get("dependencies", {}).get("dashboards", {}).items()
-        ):
+        for _, dashboard in workbook_data.get("dependencies", {}).get("dashboards", {}).items():
             dashboard = deep_convert_dict_to_dict(dashboard)
             new_dashboard = frappe.new_doc("Insights Dashboard v3")
             new_dashboard.update(dashboard)
@@ -183,9 +173,6 @@ class InsightsWorkbook(Document):
 
             new_dashboard.items = frappe.as_json(items)
             new_dashboard.insert(ignore_permissions=ignore_permissions)
-            id_map[old_dashboard_name] = new_dashboard.name
-
-        return id_map
 
     def as_dict(self, *args, **kwargs):
         d = super().as_dict(*args, **kwargs)
@@ -202,9 +189,17 @@ class InsightsWorkbook(Document):
             order_by="sort_order asc, creation asc",
         )
 
+        chart_queries = frappe.get_all(
+            "Insights Chart v3",
+            filters={"workbook": self.name},
+            pluck="data_query",
+        )
         d.queries = frappe.get_all(
             "Insights Query v3",
-            filters={"workbook": self.name},
+            filters={
+                "workbook": self.name,
+                "name": ["not in", chart_queries],
+            },
             fields=[
                 "name",
                 "title",
@@ -287,9 +282,13 @@ class InsightsWorkbook(Document):
             },
         }
 
+        chart_queries = frappe.get_all("Insights Chart v3", {"workbook": self.name}, pluck="data_query")
         queries = frappe.get_all(
             "Insights Query v3",
-            filters={"workbook": self.name},
+            filters={
+                "workbook": self.name,
+                "name": ["not in", chart_queries],
+            },
             fields=[
                 "name",
                 "title",
@@ -368,7 +367,7 @@ class InsightsWorkbook(Document):
     def duplicate(self):
         workbook = self.export()
         workbook["doc"]["title"] = None
-        return import_workbook(workbook)["workbook"]
+        return import_workbook(workbook)
 
     @frappe.whitelist()
     def import_query(self, query: dict | str):
@@ -457,6 +456,19 @@ class InsightsWorkbook(Document):
                     }
                 edge_list.append({"id": f"{dep_id}=>{q_id}", "source": dep_id, "target": q_id})
 
+        chart_query_map: dict[str, str] = {
+            row.data_query: row.title
+            for row in frappe.get_all(
+                "Insights Chart v3",
+                filters={"workbook": self.name, "data_query": ("is", "set")},
+                fields=["data_query", "title"],
+            )
+        }
+        for node in nodes.values():
+            if node["node_type"] == "query" and node["name"] in chart_query_map:
+                node["is_chart_query"] = True
+                node["chart_title"] = chart_query_map[node["name"]]
+
         return {
             "nodes": list(nodes.values()),
             "edges": edge_list,
@@ -513,9 +525,9 @@ def import_workbook(workbook):
     new_workbook = frappe.new_doc("Insights Workbook")
     new_workbook.title = workbook["doc"]["title"]
     new_workbook.insert()
-    id_map = new_workbook.restore_workbook_contents(
+    new_workbook.restore_workbook_contents(
         workbook,
         new_workbook.name,
     )
 
-    return {"workbook": new_workbook.name, "names": id_map}
+    return new_workbook.name

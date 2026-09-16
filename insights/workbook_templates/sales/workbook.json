@@ -41,31 +41,6 @@
 								"value": 1
 							}
 						]
-					},
-					{
-						"type": "join",
-						"join_type": "left",
-						"table": {
-							"type": "table",
-							"data_source": "Site DB",
-							"table_name": "tabCompany"
-						},
-						"select_columns": [
-							{
-								"type": "column",
-								"column_name": "default_currency"
-							}
-						],
-						"join_condition": {
-							"left_column": {
-								"type": "column",
-								"column_name": "company"
-							},
-							"right_column": {
-								"type": "column",
-								"column_name": "name"
-							}
-						}
 					}
 				]
 			},
@@ -357,31 +332,6 @@
 						]
 					},
 					{
-						"type": "join",
-						"join_type": "left",
-						"table": {
-							"type": "table",
-							"data_source": "Site DB",
-							"table_name": "tabCompany"
-						},
-						"select_columns": [
-							{
-								"type": "column",
-								"column_name": "default_currency"
-							}
-						],
-						"join_condition": {
-							"left_column": {
-								"type": "column",
-								"column_name": "company"
-							},
-							"right_column": {
-								"type": "column",
-								"column_name": "name"
-							}
-						}
-					},
-					{
 						"type": "mutate",
 						"new_name": "days_late",
 						"data_type": "Integer",
@@ -396,7 +346,7 @@
 		"charts": {
 			"tc-kpis": {
 				"name": "tc-kpis",
-				"title": "Sales Summary",
+				"title": "Sales KPIs",
 				"workbook": "template-sales-performance",
 				"folder": null,
 				"sort_order": 0,
@@ -409,8 +359,7 @@
 							"column_name": "base_net_total",
 							"data_type": "Decimal",
 							"aggregation": "sum",
-							"format": "currency",
-							"currency_column": "default_currency"
+							"format": "currency"
 						},
 						{
 							"measure_name": "Invoices",
@@ -423,8 +372,7 @@
 							"column_name": "base_net_total",
 							"data_type": "Decimal",
 							"aggregation": "avg",
-							"format": "currency",
-							"currency_column": "default_currency"
+							"format": "currency"
 						},
 						{
 							"measure_name": "Active Customers",
@@ -436,39 +384,26 @@
 					"number_column_options": [
 						{
 							"decimal": 2,
-							"shorten_numbers": true,
-							"comparison": {
-								"source": "previous"
-							}
+							"shorten_numbers": true
 						},
 						{
-							"shorten_numbers": false,
-							"comparison": {
-								"source": "previous"
-							}
+							"shorten_numbers": false
 						},
 						{
 							"decimal": 2,
-							"shorten_numbers": true,
-							"comparison": {
-								"source": "previous"
-							}
+							"shorten_numbers": true
 						},
 						{
-							"shorten_numbers": false,
-							"comparison": {
-								"source": "previous"
-							}
+							"shorten_numbers": false
 						}
 					],
+					"comparison": true,
 					"sparkline": true,
 					"date_column": {
 						"dimension_name": "posting_date",
 						"column_name": "posting_date",
-						"data_type": "Date"
-					},
-					"window": {
-						"grain": "month"
+						"data_type": "Date",
+						"granularity": "month"
 					},
 					"order_by": [
 						{
@@ -669,6 +604,7 @@
 						"data_type": "Decimal",
 						"aggregation": "sum"
 					},
+					"show_percentage": true,
 					"label_position": "left",
 					"order_by": [],
 					"limit": 100,
@@ -700,6 +636,7 @@
 							"shorten_numbers": false
 						}
 					],
+					"comparison": false,
 					"sparkline": false,
 					"order_by": [],
 					"limit": 100,
@@ -757,8 +694,7 @@
 							"column_name": "base_grand_total",
 							"data_type": "Decimal",
 							"aggregation": "sum",
-							"format": "currency",
-							"currency_column": "default_currency"
+							"format": "currency"
 						}
 					],
 					"order_by": [
@@ -803,7 +739,7 @@
 							"x": 0,
 							"y": 0,
 							"w": 4,
-							"h": 2
+							"h": 1
 						}
 					},
 					{
@@ -825,7 +761,7 @@
 							"x": 4,
 							"y": 0,
 							"w": 4,
-							"h": 2
+							"h": 1
 						}
 					},
 					{
@@ -834,47 +770,10 @@
 						"layout": {
 							"i": "item-kpis",
 							"x": 0,
-							"y": 2,
-							"w": 4,
-							"h": 7
-						},
-						"reading": "Revenue"
-					},
-					{
-						"type": "chart",
-						"chart": "tc-kpis",
-						"layout": {
-							"i": "item-kpis-2",
-							"x": 4,
-							"y": 2,
-							"w": 4,
-							"h": 7
-						},
-						"reading": "Invoices"
-					},
-					{
-						"type": "chart",
-						"chart": "tc-kpis",
-						"layout": {
-							"i": "item-kpis-3",
-							"x": 8,
-							"y": 2,
-							"w": 4,
-							"h": 7
-						},
-						"reading": "Avg Invoice Value"
-					},
-					{
-						"type": "chart",
-						"chart": "tc-kpis",
-						"layout": {
-							"i": "item-kpis-4",
-							"x": 12,
-							"y": 2,
-							"w": 4,
-							"h": 7
-						},
-						"reading": "Active Customers"
+							"y": 1,
+							"w": 20,
+							"h": 3
+						}
 					},
 					{
 						"type": "chart",
@@ -882,9 +781,9 @@
 						"layout": {
 							"i": "item-revenue-trend",
 							"x": 0,
-							"y": 9,
+							"y": 4,
 							"w": 12,
-							"h": 23
+							"h": 9
 						}
 					},
 					{
@@ -893,9 +792,9 @@
 						"layout": {
 							"i": "item-item-group",
 							"x": 12,
-							"y": 9,
+							"y": 4,
 							"w": 8,
-							"h": 23
+							"h": 9
 						}
 					},
 					{
@@ -904,9 +803,9 @@
 						"layout": {
 							"i": "item-top-customers",
 							"x": 0,
-							"y": 32,
+							"y": 13,
 							"w": 10,
-							"h": 23
+							"h": 9
 						}
 					},
 					{
@@ -915,9 +814,9 @@
 						"layout": {
 							"i": "item-top-items",
 							"x": 10,
-							"y": 32,
+							"y": 13,
 							"w": 10,
-							"h": 23
+							"h": 9
 						}
 					},
 					{
@@ -926,9 +825,9 @@
 						"layout": {
 							"i": "item-funnel",
 							"x": 0,
-							"y": 55,
+							"y": 22,
 							"w": 12,
-							"h": 23
+							"h": 9
 						}
 					},
 					{
@@ -937,9 +836,9 @@
 						"layout": {
 							"i": "item-lost",
 							"x": 12,
-							"y": 55,
+							"y": 22,
 							"w": 8,
-							"h": 4
+							"h": 9
 						}
 					},
 					{
@@ -948,9 +847,9 @@
 						"layout": {
 							"i": "item-overdue",
 							"x": 0,
-							"y": 78,
+							"y": 31,
 							"w": 20,
-							"h": 23
+							"h": 9
 						}
 					}
 				]

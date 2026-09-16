@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { call, LoadingIndicator, toast } from 'frappe-ui'
+import { call, LoadingIndicator } from 'frappe-ui'
 import { onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { createToast } from '../helpers/toasts'
 import { __ } from '../translation'
 
 // Resolves a shipped workbook template to its dashboard, lazily importing it on
@@ -22,7 +23,7 @@ onMounted(() => {
 			)
 		})
 		.catch(() => {
-			toast.error(__('Could not open the dashboard'))
+			createToast({ message: __('Could not open the dashboard'), variant: 'error' })
 			router.replace('/workbook')
 		})
 })

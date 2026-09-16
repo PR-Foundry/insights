@@ -1,18 +1,22 @@
 <script setup lang="ts">
-import { Breadcrumbs } from 'frappe-ui'
+import { Breadcrumbs, call } from 'frappe-ui'
 import { RefreshCcw } from 'lucide-vue-next'
-import { computed, provide, ref, watchEffect } from 'vue'
+import { computed, provide, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { downloadImage } from '../helpers'
+import { downloadImage, waitUntil, wheneverChanges } from '../helpers'
 import useDashboard from './dashboard'
 import { __ } from '../translation'
 import DashboardItem from './DashboardItem.vue'
-import LoadingOverlay from '../components/LoadingOverlay.vue'
-import StaticGridLayout from './StaticGridLayout.vue'
+import VueGridLayout from './VueGridLayout.vue'
+import { useStorage } from '@vueuse/core'
 
 const props = defineProps<{ name: string }>()
 
-const dashboard = useDashboard(props.name)
+const dashboard_name = await call('insights.api.shared.get_dashboard_name', {
+	dashboard_name: props.name,
+})
+
+const dashboard = useDashboard(dashboard_name)
 provide('dashboard', dashboard)
 dashboard.refresh()
 
@@ -20,18 +24,19 @@ const router = useRouter()
 function openWorkbook() {
 	router.push(`/workbook/${dashboard.doc.workbook}`)
 }
+await waitUntil(() => dashboard.isloaded)
 
-watchEffect(() => {
-	document.title = `${dashboard.doc.title} | Insights`
-})
+document.title = `${dashboard.doc.title} | Insights`
 
-const canOpenWorkbook = computed(() => dashboard.doc.has_workbook_access)
+const canOpenWorkbook = ref(dashboard.doc.has_workbook_access)
 
 const dashboardContainer = ref<HTMLElement | null>(null)
 async function downloadDashboardImage() {
 	if (!dashboardContainer.value) return
 	await downloadImage(dashboardContainer.value, `${dashboard.doc.title}.png`)
 }
+
+const verticalCompact = useStorage('dashboard_vertical_compact', true)
 </script>
 
 <template>
@@ -49,7 +54,7 @@ async function downloadDashboardImage() {
 				</template>
 			</Button>
 			<Dropdown
-				align="end"
+				placement="left"
 				:button="{ icon: 'lucide-more-vertical', variant: 'outline' }"
 				:options="[
 					{
@@ -72,19 +77,19 @@ async function downloadDashboardImage() {
 	</header>
 
 	<div class="relative flex h-full w-full overflow-hidden">
-		<LoadingOverlay v-if="dashboard.pending" />
 		<div ref="dashboardContainer" class="flex-1 overflow-y-auto p-4">
-			<StaticGridLayout
+			<VueGridLayout
 				v-if="dashboard.doc.items.length > 0"
 				class="h-fit w-full"
-				:verticalCompact="dashboard.doc.vertical_compact_layout"
-				:items="dashboard.doc.items"
-				:rules="dashboard.cellRules"
+				:cols="20"
+				:disabled="true"
+				:verticalCompact="verticalCompact"
+				:modelValue="dashboard.doc.items.map((item) => item.layout)"
 			>
 				<template #item="{ index }">
 					<DashboardItem :index="index" :item="dashboard.doc.items[index]" />
 				</template>
-			</StaticGridLayout>
+			</VueGridLayout>
 		</div>
 	</div>
 </template>

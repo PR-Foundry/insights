@@ -1,9 +1,9 @@
 import { watchDebounced } from '@vueuse/core'
 import { __ } from '../translation'
-import { debounce, isEqual } from 'es-toolkit'
+import { isEqual } from 'es-toolkit'
 import { toPng } from 'html-to-image'
-import { call, toast } from 'frappe-ui'
-import type { Socket } from 'socket.io-client'
+import { call, debounce } from 'frappe-ui'
+import { Socket } from 'socket.io-client'
 import {
 	inject,
 	watch,
@@ -11,7 +11,7 @@ import {
 	watch as vueWatch,
 	WatchCallback,
 	WatchSource,
-	WatchStopHandle,
+	WatchStopHandle
 } from 'vue'
 import { getFormattedDate } from '../query/helpers'
 import session from '../session'
@@ -23,9 +23,20 @@ import {
 	QueryResultColumn,
 } from '../types/query.types'
 import { FIELDTYPES } from './constants'
+import { createToast } from './toasts'
 
 export function getUniqueId(length = 8) {
 	return (+new Date() * Math.random()).toString(36).substring(0, length)
+}
+
+export function titleCase(str: string) {
+	return str
+		.toLowerCase()
+		.split(' ')
+		.map(function (word) {
+			return word.charAt(0).toUpperCase() + word.slice(1)
+		})
+		.join(' ')
 }
 
 export function copy<T>(obj: T) {
@@ -38,12 +49,11 @@ export function wheneverChanges(source: WatchSource, callback: WatchCallback, op
 	return watchDebounced(
 		source,
 		(val, _, onCleanup) => {
-			// against a clone, because `preVal` is one — see `isDirty` in ./resource
-			if (isEqual(copy(val), preVal)) return
+			if (isEqual(val, preVal)) return
 			preVal = copy(val)
 			callback(val, preVal, onCleanup)
 		},
-		options,
+		options
 	)
 }
 
@@ -53,11 +63,7 @@ export type WatchOptions = {
 	debounce?: number
 	toggleCondition?: () => boolean
 }
-export function watchToggle(
-	source: WatchSource,
-	callback: WatchCallback,
-	options: WatchOptions = {},
-) {
+export function watchToggle(source: WatchSource, callback: WatchCallback, options: WatchOptions = {}) {
 	const attachSourceWatcher = () => _watch(source, callback, options)
 
 	if (!options.toggleCondition) {
@@ -83,7 +89,7 @@ export function watchToggle(
 			},
 			{
 				immediate: true,
-			},
+			}
 		)
 	}
 }
@@ -91,19 +97,11 @@ export function watchToggle(
 function _watch(source: WatchSource, callback: WatchCallback, options: WatchOptions = {}) {
 	let _callback = callback
 
-	const debounced = options.debounce ? debounce(_callback, options.debounce) : undefined
-	if (debounced) _callback = debounced
-
-	// A debounced callback outlives the watcher: detaching the source leaves the
-	// queued call to fire. So the stop handle drops the queue as well, and a
-	// `toggleCondition` that has gone false gets no further callback — an
-	// autosave queued before an author started editing would otherwise write
-	// their arrangement mid-edit.
-	const stop = vueWatch(source, _callback, options)
-	return () => {
-		debounced?.cancel()
-		stop()
+	if (options.debounce) {
+		_callback = debounce(_callback, options.debounce)
 	}
+
+	return vueWatch(source, _callback, options)
 }
 
 export function waitUntil(fn: () => boolean) {
@@ -122,12 +120,8 @@ export function waitUntil(fn: () => boolean) {
 }
 
 export function store<T>(key: string, value: () => T) {
-	// vitest has no localStorage; the value still works, it is just not remembered
-	const storage = globalThis.localStorage
-	if (!storage) return value()
-
-	const stored = storage.getItem(key)
-	watchDebounced(value, (val) => storage.setItem(key, JSON.stringify(val)), {
+	const stored = localStorage.getItem(key)
+	watchDebounced(value, (val) => localStorage.setItem(key, JSON.stringify(val)), {
 		debounce: 500,
 		deep: true,
 	})
@@ -147,7 +141,11 @@ export function getErrorMessage(err: any) {
 }
 
 export function showErrorToast(err: Error, raise = true) {
-	toast.error(getErrorMessage(err))
+	createToast({
+		variant: 'error',
+		title: __('Error'),
+		message: getErrorMessage(err),
+	})
 	if (raise) throw err
 }
 
@@ -173,18 +171,9 @@ export function downloadImage(element: HTMLElement, filename: string, scale = 2,
 		.catch((err) => showErrorToast(err, false))
 }
 
-/** A cell read as a number, or nothing: null, blank and text are not zero. */
-export function toNumber(value: any): number | null {
-	if (value === null || value === undefined || value === '') return null
-	const number = Number(value)
-	return Number.isNaN(number) ? null : number
-}
-
-// `precision` is left out, not zeroed, when nobody states one: a caller asking
-// for no decimals means no decimals, and `0 || guess` swallowed that.
-export function formatNumber(number: number, precision?: number): string {
-	if (isNaN(number)) return String(number)
-	precision = precision ?? guessPrecision(number)
+export function formatNumber(number: number, precision = 0) {
+	if (isNaN(number)) return number
+	precision = precision || guessPrecision(number)
 	const locale = session.site?.country == 'India' ? 'en-IN' : session.user?.locale
 	return new Intl.NumberFormat(locale || 'en-US', {
 		minimumFractionDigits: precision,
@@ -202,19 +191,21 @@ export type FormatUnits = {
 const NO_UNITS: FormatUnits = { scale: 1, prefix: '', suffix: '' }
 
 // A measure states its unit once, and every reading of it prints that unit the
-// same way. The symbol sits where fmt_money puts it, so Insights and desk agree.
-export function getFormatUnits(format?: DataFormat, code?: string | null): FormatUnits {
+// same way. A currency reads the site's symbol rather than carrying one, so the
+// same shipped chart is right on a site in dollars and a site in rupees. The
+// symbol sits where fmt_money puts it, so Insights and desk agree.
+export function getFormatUnits(format?: DataFormat): FormatUnits {
 	if (format === 'percent') {
 		return { scale: 100, prefix: '', suffix: '%' }
 	}
-	if (format !== 'currency') return NO_UNITS
-
-	const resolved = code === undefined ? session.site?.currency : code
-	const currency = resolved ? session.site?.currency_symbols?.[resolved] : undefined
-	if (!currency?.symbol) return NO_UNITS
-	return currency.symbol_on_right
-		? { scale: 1, prefix: '', suffix: ` ${currency.symbol}` }
-		: { scale: 1, prefix: `${currency.symbol} `, suffix: '' }
+	if (format === 'currency') {
+		const symbol = session.site?.currency_symbol
+		if (!symbol) return NO_UNITS
+		return session.site.currency_symbol_on_right
+			? { scale: 1, prefix: '', suffix: ` ${symbol}` }
+			: { scale: 1, prefix: `${symbol} `, suffix: '' }
+	}
+	return NO_UNITS
 }
 
 export function guessPrecision(number: number) {
@@ -225,6 +216,7 @@ export function guessPrecision(number: number) {
 	if (decimalIndex === -1) return 0
 	return Math.min(str.length - decimalIndex - 1, 2)
 }
+
 
 export function getShortNumber(number: number, precision = 0) {
 	const locale = session.site?.country == 'India' ? 'en-IN' : session.user?.locale
@@ -278,7 +270,10 @@ export function safeJSONParse(str: string, defaultValue = null) {
 		console.log(str)
 		console.error(e)
 		console.groupEnd()
-		toast.error(__('Error parsing JSON'))
+		createToast({
+			message: __('Error parsing JSON'),
+			variant: 'error',
+		})
 		return defaultValue
 	}
 }
@@ -302,11 +297,10 @@ export function copyToClipboard(text: string | Promise<string>) {
 }
 
 function showCopyToast(success: boolean) {
-	if (success) {
-		toast.success(__('Copied to clipboard'))
-	} else {
-		toast.error(__('Failed to copy to clipboard'))
-	}
+	createToast({
+		variant: success ? 'success' : 'error',
+		title: success ? __('Copied to clipboard') : __('Failed to copy to clipboard'),
+	})
 }
 
 export function ellipsis(value: string, length: number) {
@@ -317,25 +311,25 @@ export function ellipsis(value: string, length: number) {
 }
 
 export function flattenOptions(
-	options: DropdownOption[] | GroupedDropdownOption[],
+	options: DropdownOption[] | GroupedDropdownOption[]
 ): DropdownOption[] {
 	if (!options.length) return []
 	return 'group' in options[0]
-		? (options as GroupedDropdownOption[]).map((c) => c.options).flat()
+		? (options as GroupedDropdownOption[]).map((c) => c.items).flat()
 		: (options as DropdownOption[])
 }
 
 export function groupOptions<T extends DropdownOption>(
 	options: T[],
-	groupBy: keyof T,
+	groupBy: keyof T
 ): GroupedDropdownOption[] {
 	return options.reduce((acc, option) => {
 		const group = option[groupBy] as string
 		const index = acc.findIndex((g) => g.group === group)
 		if (index === -1) {
-			acc.push({ group, options: [option] })
+			acc.push({ group, items: [option] })
 		} else {
-			acc[index].options.push(option)
+			acc[index].items.push(option)
 		}
 		return acc
 	}, [] as GroupedDropdownOption[])
@@ -398,9 +392,9 @@ export function createHeaders(columns: QueryResultColumn[]) {
 		return {
 			...column,
 			isNested: column.name.includes('___'),
-			// ibis pivots to measure___value1___value2, deepest value last. A
-			// header reads the other way round, the outermost dimension on the
-			// top row and the measure on the bottom, so the parts are reversed.
+			// ibis returns nested columns as value1___column1, value2___column1, value3___column1
+			// using the columns as it is will show the value1 on the top and column1, column2, column3 as nested columns
+			// so we reverse the parts to show column1 on the top and value1, value2, value3 as nested columns
 			parts: column.name.split('___').reverse(),
 		}
 	})
@@ -463,9 +457,7 @@ export function createHeaders(columns: QueryResultColumn[]) {
 		const areDates = areValidDates(headerRow.map((header) => header.label))
 		if (!areDates) continue
 
-		const areFirstOfFiscalYear = areFirstDayOfFiscalYear(
-			headerRow.map((header) => header.label),
-		)
+		const areFirstOfFiscalYear = areFirstDayOfFiscalYear(headerRow.map((header) => header.label))
 		const areFirstOfYear = areFirstDayOfYear(headerRow.map((header) => header.label))
 		const areFirstOfMonth = areFirstDayOfMonth(headerRow.map((header) => header.label))
 
@@ -488,7 +480,7 @@ export function createHeaders(columns: QueryResultColumn[]) {
 }
 
 function areFirstDayOfFiscalYear(data: string[]) {
-	const fiscalYearStart = session.site?.fiscal_year_start
+	const fiscalYearStart = session.user?.fiscal_year_start
 	if (!fiscalYearStart) return false
 
 	const start = new Date(fiscalYearStart)
@@ -554,7 +546,7 @@ export function toTitleCase(str: string): string {
 		.replace(/&/g, 'and')
 		.toLowerCase()
 		.split(' ')
-		.map((word) => {
+		.map(word => {
 			if (word === 'and') return 'and'
 			return word.charAt(0).toUpperCase() + word.slice(1)
 		})

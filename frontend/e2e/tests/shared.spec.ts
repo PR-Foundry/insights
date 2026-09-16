@@ -1,9 +1,13 @@
 import { expect, test } from '../fixtures'
 import { INSIGHTS_PATH } from '../helpers/auth'
-import { publishChart, publishDashboard, unpublishDashboard } from '../helpers/insights'
+import {
+	buildChartDataQuery,
+	publishChart,
+	publishDashboard,
+	unpublishDashboard,
+} from '../helpers/insights'
 
 test.describe('shared', () => {
-	// @feature shared.dashboard-link
 	test('a logged-out visitor opens a shared dashboard link and sees charts', async ({
 		guestPage,
 		adminApi,
@@ -11,6 +15,7 @@ test.describe('shared', () => {
 		workbookWithDashboard,
 	}) => {
 		const { chart, dashboard } = workbookWithDashboard
+		await buildChartDataQuery(adminApi, chart)
 		await publishDashboard(adminApi, dashboard.name)
 
 		await guestPage.goto(`${INSIGHTS_PATH}/shared/dashboard/${dashboard.name}`)
@@ -28,7 +33,6 @@ test.describe('shared', () => {
 		await expect(rendered.getByText('canceled')).toBeVisible()
 	})
 
-	// @feature shared.chart-link
 	test('a logged-out visitor opens a shared chart link', async ({
 		guestPage,
 		adminApi,
@@ -36,6 +40,7 @@ test.describe('shared', () => {
 		workbookWithChart,
 	}) => {
 		const { chart } = workbookWithChart
+		await buildChartDataQuery(adminApi, chart)
 		await publishChart(adminApi, chart.name)
 
 		await guestPage.goto(`${INSIGHTS_PATH}/shared/chart/${chart.name}`)
@@ -48,7 +53,6 @@ test.describe('shared', () => {
 		await expect(rendered.getByText('canceled')).toBeVisible()
 	})
 
-	// @feature shared.revoke
 	test('a revoked public link stops working', async ({
 		guestPage,
 		adminApi,
@@ -58,6 +62,7 @@ test.describe('shared', () => {
 		const { chart, dashboard } = workbookWithDashboard
 		const link = `${INSIGHTS_PATH}/shared/dashboard/${dashboard.name}`
 
+		await buildChartDataQuery(adminApi, chart)
 		await publishDashboard(adminApi, dashboard.name)
 		await guestPage.goto(link)
 		await expect(guestPage.getByText(chart.title)).toBeVisible()

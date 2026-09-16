@@ -102,7 +102,7 @@ const areFiltersUpdated = computed(() => {
 		</div>
 		<div class="flex h-full flex-shrink-0 items-start">
 			<Dropdown
-				align="end"
+				placement="right"
 				:button="{
 					icon: 'lucide-more-horizontal',
 					variant: 'ghost',

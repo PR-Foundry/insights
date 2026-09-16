@@ -8,19 +8,10 @@ import { COLUMN_TYPES, getDefaultGranularity, getGranularityOptions } from '../.
 import { Dimension, DimensionOption } from '../../types/query.types'
 
 const emit = defineEmits({ remove: () => true })
-const props = withDefaults(
-	defineProps<{
-		label?: string
-		options: DimensionOption[]
-		/**
-		 * Off for a picker whose chart groups by something else. A number card
-		 * groups by its Period, so a grain here would be a second group-by that
-		 * the card silently drops.
-		 */
-		enableGranularity?: boolean
-	}>(),
-	{ enableGranularity: true },
-)
+const props = defineProps<{
+	label?: string
+	options: DimensionOption[]
+}>()
 
 const dimension = defineModel<Dimension>({
 	required: true,
@@ -40,9 +31,7 @@ if (!dimension.value.dimension_name && dimension.value.column_name) {
 const granularityOptions = computed(() => getGranularityOptions(dimension.value.data_type))
 
 watchEffect(() => {
-	const allowedGranularities = new Set(
-		props.enableGranularity ? granularityOptions.value.map((option) => option.value) : [],
-	)
+	const allowedGranularities = new Set(granularityOptions.value.map((option) => option.value))
 
 	if (!allowedGranularities.size) {
 		// deleted, not set to `undefined`: a config is stored as JSON, so a key
@@ -70,10 +59,10 @@ function selectDimension(option?: DimensionOption) {
 </script>
 
 <template>
-	<div class="flex min-w-0 items-end gap-1">
-		<div class="min-w-0 flex-1">
+	<div class="flex items-end gap-1 overflow-hidden">
+		<div class="flex-1 overflow-hidden">
 			<Combobox
-				:placeholder="__('Select a column')"
+				placeholder="Select a column"
 				:options="props.options"
 				:modelValue="dimension.column_name"
 				@update:selectedOption="selectDimension"
@@ -90,7 +79,7 @@ function selectDimension(option?: DimensionOption) {
 									dimension.column_name ? 'text-ink-gray-8' : 'text-ink-gray-4'
 								"
 							>
-								{{ dimension.dimension_name || __('Select a column') }}
+								{{ dimension.dimension_name || 'Select a column' }}
 							</span>
 							<template #suffix>
 								<ChevronDown
@@ -113,14 +102,11 @@ function selectDimension(option?: DimensionOption) {
 			</template>
 			<template #default>
 				<div class="flex w-[14rem] flex-col gap-2 p-2">
-					<InlineFormControlLabel :label="__('Label')">
-						<LazyTextInput
-							:placeholder="__('Label')"
-							v-model="dimension.dimension_name"
-						/>
+					<InlineFormControlLabel label="Label">
+						<LazyTextInput placeholder="Label" v-model="dimension.dimension_name" />
 					</InlineFormControlLabel>
 
-					<InlineFormControlLabel :label="__('Type')">
+					<InlineFormControlLabel label="Type">
 						<FormControl
 							type="select"
 							v-model="dimension.data_type"
@@ -128,10 +114,7 @@ function selectDimension(option?: DimensionOption) {
 						/>
 					</InlineFormControlLabel>
 
-					<InlineFormControlLabel
-						v-if="props.enableGranularity && isDate(dimension.data_type)"
-						:label="__('Granularity')"
-					>
+					<InlineFormControlLabel v-if="isDate(dimension.data_type)" label="Granularity">
 						<FormControl
 							type="select"
 							v-model="dimension.granularity"

@@ -1,7 +1,6 @@
 import ast
-import sys
+import re
 import time
-import traceback
 from contextlib import contextmanager
 from datetime import date
 from functools import cached_property
@@ -12,9 +11,8 @@ import numpy as np
 import pandas as pd
 import sqlglot as sg
 import sqlparse
-from frappe.utils.data import flt, orjson_dumps
-from frappe.utils.response import json_handler
-from frappe.utils.safe_exec import SERVER_SCRIPT_FILE_PREFIX, safe_eval, safe_exec
+from frappe.utils.data import flt
+from frappe.utils.safe_exec import safe_eval, safe_exec
 from ibis import _
 from ibis.expr.datatypes import DataType
 from ibis.expr.operations.relations import DatabaseTable, Field
@@ -28,11 +26,7 @@ from insights.insights.doctype.insights_data_source_v3.data_warehouse import is_
 from insights.insights.doctype.insights_table_v3.insights_table_v3 import (
     InsightsTablev3,
 )
-from insights.insights.query_builders.sql_functions import (
-    add_start_and_end_time,
-    handle_timespan,
-    resolve_timespan,
-)
+from insights.insights.query_builders.sql_functions import handle_timespan
 from insights.insights.query_utils import extract_sql_table_refs, get_direct_dependencies
 from insights.utils import create_execution_log
 from insights.utils import deep_convert_dict_to_dict as _dict
@@ -51,44 +45,6 @@ except ImportError:
         return decorator
 
 
-# the relation a `sql_column` fragment selects from, standing for the pipeline so far
-SQL_COLUMN_RELATION = "_insights_sql_column"
-
-# the alias a native SQL query is nested under before ibis sees it
-NATIVE_SQL_RELATION = "_insights_native_sql"
-
-# The aggregations whose group values add up to the value of the whole. Only
-# these let a set of groups be read as parts of one total: two groups' averages
-# do not average, and two distinct counts do not add. An expression measure
-# names no aggregation at all, so it is never one of them.
-ADDITIVE_AGGREGATIONS = ("sum", "count")
-
-
-# the summarize carries a money measure's currency code as `<measure>__currency`,
-# because the code must survive aggregation. The client reads it by that name
-# (`currencyColumnName` in query/helpers.ts), so the suffix is a contract. A column
-# so named is hidden in every schema read.
-CARRIED_CURRENCY_SUFFIX = "__currency"
-
-
-def is_carried_currency_column(name: str) -> bool:
-    return name.endswith(CARRIED_CURRENCY_SUFFIX)
-
-
-# a carried currency is the only kind of hidden column today
-def is_hidden_column(name: str) -> bool:
-    return is_carried_currency_column(name)
-
-
-def get_carried_currency_columns(measures) -> dict[str, str]:
-    """Carried column name to the source column it is read from."""
-    return {
-        f"{measure['measure_name']}{CARRIED_CURRENCY_SUFFIX}": measure["currency_column"]
-        for measure in measures or []
-        if measure.get("format") == "currency" and measure.get("currency_column")
-    }
-
-
 class CircularQueryReferenceError(frappe.ValidationError):
     """Raised when a circular query reference is detected during query building."""
 
@@ -101,7 +57,6 @@ class IbisQueryBuilder:
         self.title = self.doc.title or self.doc.name
         self.active_operation_idx = active_operation_idx
         self.use_live_connection = bool(doc.use_live_connection)
-        self.force = False
         self.operations = doc.operations
         self.set_operations()
 
@@ -182,8 +137,6 @@ class IbisQueryBuilder:
             return self.apply_remove(operation)
         elif operation.type == "mutate":
             return self.apply_mutate(operation)
-        elif operation.type == "sql_column":
-            return self.apply_sql_column(operation)
         elif operation.type == "cast":
             return self.apply_cast(operation)
         elif operation.type == "summarize":
@@ -200,36 +153,16 @@ class IbisQueryBuilder:
             return self.apply_sql(operation)
         elif operation.type == "code":
             return self.apply_code(operation)
-
-        # Not `return self.query`: skipping an operation nobody recognises answers
-        # with a table that is missing a column, a filter or a join, and nothing
-        # says so. A query written by a newer client has to fail, not quietly
-        # return different numbers.
-        frappe.throw(
-            frappe._("This query uses an operation this version does not know: {0}").format(operation.type),
-        )
+        return self.query
 
     @cached_property
     def saved_references(self):
-        """The references this execution is already authorized for.
+        """The references stored on this query, which `validate` authorised.
 
         Read from the row, not from the document being built: that one may have
-        come from a request body, which authorizes nothing.
-
-        Two rows answer, because two kinds of document reach here under a name. A
-        saved query carries the dependencies `validate` authorized. A chart runs a
-        query document it mints from its config under the chart's own name, and
-        what that pipeline sources is the chart's stored `query` link, which
-        `check_chart_query_access` authorized when it was written.
+        come from a request body, which authorises nothing.
         """
-        name = self.doc.get("name")
-        references = set(get_direct_dependencies(name))
-
-        chart_query = frappe.db.get_value("Insights Chart v3", name, "query")
-        if chart_query:
-            references.add(chart_query)
-
-        return references
+        return set(get_direct_dependencies(self.doc.get("name")))
 
     def check_query_reference(self, query_name):
         """A saved reference is authorised. Anything else is checked now."""
@@ -252,7 +185,7 @@ class IbisQueryBuilder:
         if table_args.type == "query":
             self.check_query_reference(table_args.query_name)
             q = frappe.get_doc("Insights Query v3", table_args.query_name)
-            _table = q.build(use_live_connection=self.use_live_connection, force=self.force)
+            _table = q.build(use_live_connection=self.use_live_connection)
 
         if _table is None:
             frappe.throw("Table or Query not found")
@@ -588,148 +521,11 @@ class IbisQueryBuilder:
             new_column = new_column.cast(dtype)
         return self.query.mutate(**{new_name: new_column})
 
-    def apply_sql_column(self, sql_column_args):
-        """Add one column from a raw SQL expression.
-
-        Written by the v2 migrator, for the constructs v2 expressed in SQL and v3
-        has no expression for. ibis has no scalar-level SQL escape - only
-        `Table.sql()` - so this is a relation-level operation and not a `mutate`.
-
-        `new_name` is not sanitized, unlike `apply_mutate` and `apply_rename`: a
-        migrated column keeps the name the v2 charts and filters already use.
-        """
-        new_name = sql_column_args.new_name
-        raw_sql = sql_column_args.raw_sql
-
-        if not new_name or not raw_sql or not raw_sql.strip():
-            frappe.throw(
-                frappe._("A SQL column needs both a name and an expression"),
-            )
-
-        if not sql_column_args.data_source:
-            frappe.throw(
-                frappe._("A SQL column needs the data source its expression is written for"),
-            )
-
-        data_source = frappe.get_doc("Insights Data Source v3", sql_column_args.data_source)
-        source_dialect = data_source.get_sqlglot_dialect()
-
-        raw_sql = sqlparse.format(sql=raw_sql, strip_comments=True).strip()
-
-        alias = sg.to_identifier(new_name, quoted=True).sql(dialect=source_dialect)
-        statement = f"SELECT *, {raw_sql} AS {alias} FROM {SQL_COLUMN_RELATION}"
-        self._validate_sql_column_statement(statement, source_dialect)
-
-        if not self.use_live_connection:
-            statement = self._transpile_sql_to_duckdb(statement, source_dialect)
-
-        # the alias is what puts the current pipeline in scope: without it ibis emits
-        # `FROM <original table>` and any column derived mid-pipeline is unresolvable
-        query = self.query.alias(SQL_COLUMN_RELATION).sql(statement)
-
-        dtype = self.get_ibis_dtype(sql_column_args.data_type) if sql_column_args.data_type else None
-        return query.cast({new_name: dtype}) if dtype else query
-
-    def _validate_sql_column_statement(self, statement: str, dialect: str) -> None:
-        """Validate the assembled statement, not the expression alone.
-
-        An expression parsed on its own is read as the start of a statement, so
-        `replace(...)` reads as MySQL's REPLACE. In place, it is one projection.
-        """
-        try:
-            parsed = sg.parse(statement, dialect=dialect)
-        except Exception as e:
-            frappe.throw(
-                frappe._("Failed to parse the SQL column expression: {0}").format(e),
-            )
-
-        if len(parsed) != 1 or not isinstance(parsed[0], sg.exp.Select):
-            frappe.throw(
-                frappe._("A SQL column expression must be a single expression"),
-            )
-
-        select = parsed[0]
-        tables = {table.name for table in select.find_all(sg.exp.Table)}
-        nested = len(list(select.find_all(sg.exp.Select))) > 1 or select.find(sg.exp.Subquery)
-        if nested or tables != {SQL_COLUMN_RELATION}:
-            frappe.throw(
-                frappe._("A SQL column expression cannot read another table"),
-            )
-
     def apply_summary(self, summarize_args):
-        if any(dimension.get("windows") for dimension in summarize_args.dimensions):
-            return self.aggregate_by_window(summarize_args)
-
         aggregates = [self.translate_measure(measure) for measure in summarize_args.measures]
         aggregates = {agg.get_name(): agg for agg in aggregates}
-        aggregates.update(self.translate_carried_currencies(summarize_args.measures))
         group_bys = [self.translate_dimension(dimension) for dimension in summarize_args.dimensions]
         return self.query.aggregate(**aggregates, by=group_bys)
-
-    def translate_carried_currencies(self, measures):
-        carried = {}
-        for name, column_name in get_carried_currency_columns(measures).items():
-            # a missing column must not fail the query; it carries null and the amount prints bare
-            col = self.get_column(column_name, throw=False)
-            if col is None:
-                carried[name] = ibis.null().cast("string")
-                continue
-            # min and max skip nulls, so a row with no code is checked apart
-            one_currency = (col.min() == col.max()) & ~col.isnull().any()
-            carried[name] = ibis.ifelse(one_currency, col.min(), ibis.null()).cast("string")
-        return carried
-
-    def aggregate_by_window(self, summarize_args):
-        """One aggregate per span, unioned, each named by the date it starts on.
-
-        A card grouped by spans gets one row per span whatever it covers, and
-        the start dates sort the spans oldest first, the order a number card
-        reads its rows in. A span holding no rows is a row too, with null
-        measures: the card reads its rows by position, so a span that came back
-        as nothing would hand the reading its neighbor's figure. A span carries
-        no dates until here, because the clock and the fiscal calendar are only
-        known while the query runs.
-
-        Every span reads its own stretch whole, so spans that overlap both count
-        the rows they share: a span longer than the shift its comparison moves
-        by (a year of months against last year) still reads the figure for the
-        whole of it.
-
-        The span is the whole of the grouping. A dimension beside it would cut
-        each span again, and a second span dimension has no meaning: two sets
-        of spans name no rows in common.
-        """
-        dimensions = summarize_args.dimensions
-        if len(dimensions) != 1 or not dimensions[0].get("windows"):
-            frappe.throw(frappe._("A summarize grouped by a span can group by nothing else"))
-
-        windowed = dimensions[0]
-
-        column = self.get_column(windowed.column_name)
-        window_name = windowed.dimension_name or windowed.column_name
-        dtype = self.get_ibis_dtype(windowed.data_type) if windowed.data_type else None
-
-        base = self.query
-        rows = []
-        for start, end in sorted({resolve_timespan(window) for window in windowed.windows}):
-            bounds = add_start_and_end_time([start, end])
-            self.query = base.filter(column.between(*bounds))
-
-            aggregates = [self.translate_measure(measure) for measure in summarize_args.measures]
-            aggregates = {agg.get_name(): agg for agg in aggregates}
-            aggregates.update(self.translate_carried_currencies(summarize_args.measures))
-
-            label = ibis.literal(start)
-            label = label.cast(dtype) if dtype else label
-            # projected beside the aggregate, not grouped by: an ungrouped
-            # aggregate over no rows is still one row, with null measures. The
-            # card reads its rows by position, so a span that drops out shifts
-            # every reading onto the wrong span.
-            row = self.query.aggregate(**aggregates).mutate(**{window_name: label})
-            rows.append(row.select(window_name, *aggregates))
-
-        self.query = base
-        return ibis.union(*rows)
 
     def apply_order_by(self, order_by_args):
         order_by_column = self.get_column(order_by_args.column.column_name, throw=False)
@@ -764,17 +560,13 @@ class IbisQueryBuilder:
             max_names = pivot_args.get("max_column_values", 10)
             max_names = int(max_names)
             max_names = max(1, min(max_names, 100))
-            value_names = [value.get_name() for value in values]
-            # ranking sums the measure, which only says which series is biggest
-            # when the measure adds up
-            first = (pivot_args["values"] or [{}])[0]
-            additive = (first.get("aggregation") or "") in ADDITIVE_AGGREGATIONS
-            names, has_tail = self.get_top_pivot_names(names_from, value_names if additive else [], max_names)
+            names = self.query.select(names_from).order_by(names_from).distinct().limit(max_names).execute()
+            names = names.fillna("null").values
 
             # If we've limited the number of distinct column values, bucket the
             # remaining values into an "Others" group so charts show the rest.
             # This currently supports the common case of a single pivot column.
-            if has_tail and len(columns) == 1:
+            if len(names) == max_names and len(columns) == 1:
                 selected_names = [str(v) for v in names.flatten()]
 
                 col_name = columns[0].get_name()
@@ -786,7 +578,7 @@ class IbisQueryBuilder:
                 self.query = self.query.mutate(**{col_name: others_expr})
 
                 # ensure the pivot names include the 'Others' bucket
-                names = [str(name) for name in selected_names]
+                names = list(map(str, selected_names))
                 names.append("Others")
 
             return self.query.pivot_wider(
@@ -799,32 +591,6 @@ class IbisQueryBuilder:
             )
 
         return self.query
-
-    def get_top_pivot_names(self, names_from, value_names, max_names):
-        """The distinct column values a pivot keeps, and whether it cut any.
-
-        Everything the cut leaves out lands in "Others", so this ranking decides
-        which series a chart draws. Rank by the measure, not by the value's own
-        name: alphabetical order drops the largest series into the tail. Several
-        measures rank by the first. With none, and with a measure that does not
-        add up, whose sum ranks nothing, the pivot only shows which groups
-        exist, so the number of rows ranks them.
-
-        The names come back in their own ascending order, which becomes the
-        column order. A split on a date stays chronological that way.
-        """
-        rank = getattr(self.query, value_names[0]).sum() if value_names else self.query.count()
-        ranked = self.query.aggregate(**{"__rank__": rank}, by=names_from)
-        # names_from breaks a tie, so an equal measure keeps the same set every run
-        ranked = ranked.order_by([ibis.desc("__rank__"), *names_from])
-        # one past the cap tells a real cut apart from a set that just fits, which
-        # keeps an empty "Others" column out of the result
-        ranked = ranked.limit(max_names + 1)
-
-        top = ranked.execute()
-        has_tail = len(top) > max_names
-        top = top.head(max_names).sort_values(names_from, na_position="last")
-        return top[names_from].fillna("null").values, has_tail
 
     def apply_custom_operation(self, operation):
         return self.evaluate_expression(operation.expression.expression)
@@ -844,12 +610,12 @@ class IbisQueryBuilder:
             "Insights Settings", "enable_permissions"
         ) or frappe.db.get_single_value("Insights Settings", "apply_user_permissions")
 
-        # the data store reads DuckDB, so from the transpile on, that is the dialect
-        # this query is written in
-        target_dialect = source_dialect if self.use_live_connection else "duckdb"
-
         if check_permissions or not self.use_live_connection:
-            tables = self._get_sql_table_names(raw_sql, dialect=source_dialect)
+            tables = self._get_sql_table_names(
+                raw_sql,
+                dialect=source_dialect,
+                use_live_connection=self.use_live_connection,
+            )
             replace_map = self._get_sql_table_bindings(
                 data_source,
                 tables,
@@ -861,7 +627,7 @@ class IbisQueryBuilder:
             if not self.use_live_connection:
                 raw_sql = self._transpile_sql_to_duckdb(raw_sql, source_dialect)
 
-            raw_sql = self._replace_sql_tables(raw_sql, replace_map, dialect=target_dialect)
+            raw_sql = self._prepend_sql_with_clauses(raw_sql, replace_map)
 
         supports_stored_procedure = ds.database_type in ["PostgreSQL", "MSSQL", "MariaDB"]
         if (
@@ -882,7 +648,7 @@ class IbisQueryBuilder:
             results = ibis.memtable(df)
 
         elif raw_sql.strip().lower().startswith(("select", "with")):
-            results = db.sql(self._hide_ctes_from_ibis(raw_sql, dialect=target_dialect))
+            results = db.sql(raw_sql)
 
         else:
             frappe.throw(
@@ -895,17 +661,14 @@ class IbisQueryBuilder:
     def _validate_native_sql(self, raw_sql: str, use_live_connection: bool) -> str:
         raw_sql = raw_sql.strip()
 
-        # one statement, on every path: ibis cannot run two — `db.sql` on a pair
-        # fails while it reads the schema — and both rewrites below read the first
-        # statement only, so a second one would be dropped rather than refused
-        statements = [stmt for stmt in sqlparse.parse(raw_sql) if stmt.tokens and stmt.value.strip()]
-        if len(statements) > 1:
-            frappe.throw(
-                frappe._("Multiple SQL statements are not supported for native queries"),
-                title=frappe._("Unsupported SQL Query"),
-            )
-
         if not use_live_connection:
+            statements = [stmt for stmt in sqlparse.parse(raw_sql) if stmt.tokens and stmt.value.strip()]
+            if len(statements) > 1:
+                frappe.throw(
+                    "Multiple SQL statements are not supported with Data Store for native queries",
+                    title="Unsupported SQL Query",
+                )
+
             if raw_sql.lower().startswith("exec"):
                 frappe.throw(
                     "Stored procedures are not supported with Data Store for native queries",
@@ -934,15 +697,18 @@ class IbisQueryBuilder:
 
         return transpiled_sql[0]
 
-    def _get_sql_table_names(self, raw_sql: str, dialect: sg.Dialect | None) -> set[str]:
+    def _get_sql_table_names(
+        self,
+        raw_sql: str,
+        dialect: sg.Dialect | None,
+        use_live_connection: bool,
+    ) -> set[str]:
         tables = set()
         for table_ref in extract_sql_table_refs(raw_sql, dialect=dialect):
-            # a binding is looked up by the bare name, so a qualified reference would
-            # bind the same-named table in the default schema — a different table
-            if table_ref.db or table_ref.catalog:
+            if not use_live_connection and (table_ref.db or table_ref.catalog):
                 frappe.throw(
-                    frappe._("Schema-qualified table names are not supported for native queries yet"),
-                    title=frappe._("Unsupported SQL Query"),
+                    "Schema-qualified table names are not supported with Data Store for native queries yet",
+                    title="Unsupported SQL Query",
                 )
 
             tables.add(table_ref.name)
@@ -978,80 +744,41 @@ class IbisQueryBuilder:
 
         return replace_map
 
-    def _replace_sql_tables(
-        self,
-        raw_sql: str,
-        replace_map: dict[str, str],
-        dialect: sg.Dialect | None,
-    ) -> str:
-        """Swap every reference to a bound table for its permission-filtered select.
-
-        Prepending one CTE per table is shorter, but then the CTE name is the
-        collision surface. MariaDB matches CTE names case-insensitively, so a query
-        that reads `tabTask` in one place and `tabtask` in another asks for two CTEs
-        that MariaDB reads as one, and it refuses the pair. Replacing the reference
-        itself needs no name, so no spelling can collide.
-        """
+    def _prepend_sql_with_clauses(self, raw_sql: str, replace_map: dict[str, str]) -> str:
         if not replace_map:
             return raw_sql
 
-        parsed = sg.parse_one(raw_sql, dialect=dialect)
+        with_clauses = []
+        for table_name, table_sql in replace_map.items():
+            quoted_table_name = sg.to_identifier(table_name)
+            with_clauses.append(f"{quoted_table_name} AS ({table_sql})")
 
-        # collect first: the replacements carry their own table references, and
-        # re-reading them would replace a table inside its own binding
-        for table_exp in list(parsed.find_all(sg.exp.Table)):
-            table_sql = replace_map.get(table_exp.name)
-            if table_sql is None:
-                continue
+        with_clause_sql = ", ".join(with_clauses)
+        raw_sql_stripped = raw_sql.strip()
+        if raw_sql_stripped.lower().startswith("with"):
+            return re.sub(
+                r"(\bwith\b)",
+                f"WITH {with_clause_sql},",
+                raw_sql_stripped,
+                count=1,
+                flags=re.IGNORECASE,
+            )
 
-            # an unaliased reference keeps the table name as its alias, so a
-            # qualified column such as `tabTask`.name still resolves
-            alias = table_exp.args.get("alias") or sg.exp.TableAlias(this=table_exp.this.copy())
-            subquery = sg.parse_one(table_sql, dialect=dialect).subquery()
-            subquery.set("alias", alias)
-            table_exp.replace(subquery)
-
-        return parsed.sql(dialect=dialect)
-
-    def _hide_ctes_from_ibis(self, raw_sql: str, dialect: sg.Dialect | None) -> str:
-        """Nest a query that opens with `WITH`, so ibis is handed no top-level CTE.
-
-        ibis 11 clears a parsed statement's `WITH` clause with `args.pop("with")`
-        before re-attaching it. sqlglot 28 renamed that key to `with_`, so the clear
-        became a no-op and every CTE is written twice. MariaDB rejects the pair:
-        `(4004, 'Duplicate query name ... in WITH clause')`.
-
-        Dropping back below sqlglot 28 is not open to us — frappe needs 30. Nesting
-        the statement leaves the outer query with no CTE, so ibis re-attaches
-        nothing. ibis 12 no longer pops that key at all, so drop this when the
-        `ibis-framework` pin moves off 11.
-        """
-        try:
-            parsed = sg.parse_one(raw_sql, dialect=dialect)
-        except Exception:
-            # not ours to reject: let ibis fail on it the way it always has
-            return raw_sql
-
-        if not parsed.ctes:
-            return raw_sql
-
-        # nest what was parsed, not the text it came from: the text can carry a
-        # trailing semicolon, and that would land inside the brackets
-        return f"SELECT * FROM ({parsed.sql(dialect=dialect)}) AS {NATIVE_SQL_RELATION}"
+        return f"WITH {with_clause_sql} {raw_sql_stripped}"
 
     def apply_code(self, code_args):
         code = code_args.code
 
         adhoc_filters = frappe.as_json(getattr(frappe.local, "insights_adhoc_filters", {}))
-        variables = resolve_variables(getattr(self.doc, "variables", None))
-        # a variable value changes the output as surely as the code does, so it
-        # belongs in the key that decides whether the script runs again
-        digest = make_digest(code, adhoc_filters, frappe.as_json(variables))
+        digest = make_digest(code + adhoc_filters)
 
-        cached_results = None if self.force else get_cached_results(digest)
+        cached_results = get_cached_results(digest)
         if cached_results is not None:
             results = cached_results
         else:
+            variables = None
+            if hasattr(self.doc, "variables") and self.doc.variables:
+                variables = self.doc.variables
             results = get_code_results(code, variables=variables)
             cache_results(digest, results, cache_expiry=60 * 5)
 
@@ -1289,7 +1016,6 @@ def get_columns_from_schema(schema: ibis.Schema):
         {
             "name": col,
             "type": to_insights_type(dtype),
-            **({"hidden": True} if is_hidden_column(col) else {}),
         }
         for col, dtype in schema.items()
     ]
@@ -1330,8 +1056,7 @@ def cache_results(cache_key, result: pd.DataFrame, cache_expiry=3600):
     }
     frappe.cache().set_value(
         _results_cache_key(cache_key),
-        # the response writes inf and NaN as null, and so must the cache that orjson reads back
-        orjson_dumps(payload, default=json_handler),
+        frappe.as_json(payload),
         expires_in_sec=cache_expiry,
     )
 
@@ -1415,66 +1140,7 @@ class SafePandasDataFrame(pd.DataFrame):
         raise NotImplementedError("to_json is not supported in this context")
 
 
-def publish_script_logs():
-    # this runs in a finally, so an unguarded raise here would replace the
-    # script's own exception - or its result - with a realtime transport error
-    try:
-        frappe.publish_realtime(
-            event="insights_script_log",
-            user=frappe.session.user,
-            message={
-                "user": frappe.session.user,
-                "logs": frappe.debug_log,
-            },
-        )
-    except Exception:
-        frappe.log_error("Failed to publish script query logs")
-
-
-def format_script_error(code: str) -> str:
-    exc_type, exc_value, tb = sys.exc_info()
-    name = getattr(exc_type, "__name__", "Error")
-    message = f"{name}: {exc_value}"
-
-    lineno = get_script_line_number(exc_value, tb)
-    if not lineno:
-        return message
-
-    lines = code.splitlines()
-    source = lines[lineno - 1].strip() if 0 < lineno <= len(lines) else ""
-    return f"Line {lineno}: {source}\n{message}" if source else f"Line {lineno}\n{message}"
-
-
-def get_script_line_number(exc_value, tb) -> int | None:
-    # RestrictedPython compiles the script under this filename, so its frames are
-    # the only ones with a line number that means anything to the author
-    for frame in traceback.extract_tb(tb):
-        if frame.filename.startswith(SERVER_SCRIPT_FILE_PREFIX):
-            return frame.lineno
-
-    # a syntax error never runs, so it has no frame of its own
-    if isinstance(exc_value, SyntaxError):
-        return exc_value.lineno
-
-    return None
-
-
-def resolve_variables(variables) -> dict:
-    if not variables:
-        return {}
-
-    from frappe.utils.password import get_decrypted_password
-
-    resolved = {}
-    for var in variables:
-        if isinstance(var, dict):
-            resolved[var.get("variable_name")] = var.get("variable_value")
-        else:
-            resolved[var.variable_name] = get_decrypted_password(var.doctype, var.name, "variable_value")
-    return resolved
-
-
-def get_code_results(code: str, variables: dict | None = None):
+def get_code_results(code: str, variables=None):
     pandas = frappe._dict()
     pandas.DataFrame = SafePandasDataFrame
     pandas.read_csv = pd.read_csv
@@ -1483,46 +1149,52 @@ def get_code_results(code: str, variables: dict | None = None):
     results = []
     frappe.local.debug_log = []
 
-    _locals = {"results": results, **(variables or {})}
-    start = time.monotonic()
-    try:
-        with ensure_rollback():
-            _, _locals = safe_exec(
-                code,
-                _globals={"pandas": pandas},
-                _locals=_locals,
-                restrict_commit_rollback=True,
-            )
-    except Exception:
-        # the panel is the only place the script author sees anything, so the
-        # error has to land there before it travels on as a request failure
-        frappe.log(format_script_error(code))
-        raise
-    else:
-        results = to_dataframe(_locals["results"])
-        frappe.log(f"{len(results)} rows in {flt(time.monotonic() - start, 3)}s")
-        return results
-    finally:
-        publish_script_logs()
+    variable_context = {}
+    if variables:
+        from frappe.utils.password import get_decrypted_password
 
+        for var in variables:
+            if hasattr(var, "variable_name") and hasattr(var, "variable_value"):
+                variable_context[var.variable_name] = get_decrypted_password(
+                    var.doctype, var.name, "variable_value"
+                )
+            elif isinstance(var, dict):
+                variable_context[var.get("variable_name")] = var.get("variable_value")
 
-def to_dataframe(results) -> pd.DataFrame:
-    if isinstance(results, pd.DataFrame):
-        return results
+    _locals = {"results": results, **variable_context}
+    with ensure_rollback():
+        _, _locals = safe_exec(
+            code,
+            _globals={"pandas": pandas},
+            _locals=_locals,
+            restrict_commit_rollback=True,
+        )
 
+    results = _locals["results"]
     if results is None or len(results) == 0:
-        # DuckDB cannot hold a table with no columns, so an empty run still needs
-        # one. A named column beats the fake row of errors this used to return.
-        return pd.DataFrame({"results": pd.Series([], dtype="string")})
+        results = [{"error": "No results"}]
 
-    try:
-        if isinstance(results, list) and isinstance(results[0], list | tuple):
-            return pd.DataFrame.from_records(results)
-        return pd.DataFrame(results)
-    except (ValueError, TypeError):
-        import json as _json
+    frappe.publish_realtime(
+        event="insights_script_log",
+        user=frappe.session.user,
+        message={
+            "user": frappe.session.user,
+            "logs": frappe.debug_log,
+        },
+    )
 
-        return pd.DataFrame(_json.loads(frappe.as_json(results)))
+    if not isinstance(results, pd.DataFrame):
+        try:
+            if isinstance(results, list) and results and isinstance(results[0], list | tuple):
+                results = pd.DataFrame.from_records(results)
+            else:
+                results = pd.DataFrame(results)
+        except (ValueError, TypeError):
+            import json as _json
+
+            results = pd.DataFrame(_json.loads(frappe.as_json(results)))
+
+    return results
 
 
 @contextmanager

@@ -1,25 +1,24 @@
 <template>
 	<Popover
-		:open="isOpen"
-		@update:open="(value) => !value && (isOpen = false)"
-		:side="side"
-		:align="align"
-		bare
+		transition="default"
+		:placement="placement"
+		class="!block w-full"
+		popoverClass="!min-w-fit"
 	>
-		<!--
-			This wrapper is reka's trigger, so any click that reaches it toggles.
-			Opening is left to the caller's `togglePopover`, so only the element the
-			caller nominates opens the picker, not a click elsewhere in the target
-			(a text field, say). Whatever calls `togglePopover` has to stop the
-			click here.
-		-->
-		<template #trigger>
-			<div class="w-full">
-				<slot name="target" :togglePopover="togglePopover" :isOpen="isOpen"></slot>
-			</div>
+		<template #target="{ togglePopover, isOpen }">
+			<slot
+				name="target"
+				:togglePopover="
+					() => {
+						togglePopover()
+						setSelectorPosition(modelColor)
+					}
+				"
+				:isOpen="isOpen"
+			></slot>
 		</template>
-		<template #default>
-			<div ref="colorPicker" class="rounded-6 bg-surface-elevation-2 p-3 shadow-lg">
+		<template #body>
+			<div ref="colorPicker" class="dark:bg-zinc-900 rounded-lg bg-white p-3 shadow-lg">
 				<div
 					ref="colorMap"
 					:style="{
@@ -30,7 +29,7 @@
 						`,
 					}"
 					@mousedown.stop="handleSelectorMove"
-					class="relative m-auto h-24 w-44 rounded-5"
+					class="relative m-auto h-24 w-44 rounded-md"
 					@click.prevent="setColor"
 				>
 					<div
@@ -51,7 +50,7 @@
 				</div>
 				<div
 					ref="hueMap"
-					class="relative m-auto mt-2 h-3 w-44 rounded-5"
+					class="relative m-auto mt-2 h-3 w-44 rounded-md"
 					@click="setHue"
 					@mousedown.stop="handleHueSelectorMove"
 					:style="{
@@ -94,7 +93,7 @@
 						></div>
 						<svg
 							v-if="isSupported"
-							class="text-ink-gray-7"
+							class="dark:text-zinc-300 text-gray-700"
 							@click="() => open()"
 							xmlns="http://www.w3.org/2000/svg"
 							width="16"
@@ -121,7 +120,6 @@
 <script setup lang="ts">
 import { clamp, useEyeDropper } from '@vueuse/core'
 import { Popover } from 'frappe-ui'
-import type { PopoverAlign, PopoverSide } from 'frappe-ui'
 import { PropType, Ref, StyleValue, computed, nextTick, ref, watch } from 'vue'
 import { HSVToHex, HashString, HexToHSV, RGBString, getRGB } from '../charts/colors'
 
@@ -151,26 +149,6 @@ const modelColor = computed(() => {
 	return getRGB(props.modelValue)
 })
 
-// Popover splits `placement` into `side` + `align`. This component keeps taking
-// the one string its callers already pass.
-const side = computed(() => props.placement.split('-')[0] as PopoverSide)
-const align = computed(() => (props.placement.split('-')[1] || 'center') as PopoverAlign)
-
-// Driven in controlled mode: the trigger wraps whatever the caller renders, so
-// reka's own toggle would fight the caller's `togglePopover`. Only the closing
-// half of `update:open` is honored, which keeps Escape and outside-click working.
-const isOpen = ref(false)
-function togglePopover() {
-	isOpen.value = !isOpen.value
-}
-
-// The popover mounts its content only while open, so the maps do not exist at
-// the moment the picker opens. Position the selectors when the element itself
-// appears, rather than guessing how many ticks reka's portal takes.
-watch(colorMap, (el) => {
-	if (el) setSelectorPosition(modelColor.value)
-})
-
 const emit = defineEmits(['update:modelValue'])
 
 const colors = [
@@ -189,7 +167,6 @@ if (!isSupported.value) {
 }
 
 const setColorSelectorPosition = (color: HashString) => {
-	if (!colorMap.value) return
 	const { width, height } = colorMap.value.getBoundingClientRect()
 	const { s, v } = HexToHSV(color)
 	let x = clamp(s * width, 0, width)
@@ -198,7 +175,6 @@ const setColorSelectorPosition = (color: HashString) => {
 }
 
 const setHueSelectorPosition = (color: HashString) => {
-	if (!hueMap.value) return
 	const { width } = hueMap.value.getBoundingClientRect()
 	const { h } = HexToHSV(color)
 	const left = (h / 360) * width
@@ -279,7 +255,6 @@ const hue = computed(() => {
 
 const updateColor = () => {
 	nextTick(() => {
-		if (!colorMap.value) return
 		const colorMapBounds = colorMap.value.getBoundingClientRect()
 		const s = Math.round((colorSelectorPosition.value.x / colorMapBounds.width) * 100)
 		const v = 100 - Math.round((colorSelectorPosition.value.y / colorMapBounds.height) * 100)

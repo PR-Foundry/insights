@@ -1,7 +1,14 @@
 <script setup lang="tsx">
 import { useMagicKeys, useStorage, whenever } from '@vueuse/core'
-import { Breadcrumbs, TabButtons, call } from 'frappe-ui'
-import { ListEmptyState, ListHeader, ListRows, ListView } from 'frappe-ui/experimental'
+import {
+	Breadcrumbs,
+	ListEmptyState,
+	ListHeader,
+	ListRows,
+	ListView,
+	TabButtons,
+	call,
+} from 'frappe-ui'
 import { LayoutTemplate as LayoutTemplateIcon, PlusIcon, SearchIcon } from 'lucide-vue-next'
 import { computed, ref, watchEffect } from 'vue'
 import { useRouter } from 'vue-router'
@@ -13,7 +20,7 @@ import useWorkbook, { newWorkbookName } from './workbook'
 import { getWorkbookColumns } from './workbookListColumns'
 import useWorkbooks from './workbooks'
 import WorkbookTemplates, { WorkbookTemplate } from './WorkbookTemplates.vue'
-import { useTelemetry } from '@framework/ui/telemetry/index.ts'
+import { useTelemetry } from 'frappe-ui/frappe'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -176,7 +183,7 @@ watchEffect(() => {
 					<SearchIcon class="h-4 w-4 text-ink-gray-4" />
 				</template>
 			</FormControl>
-			<TabButtons :options="scopeTabs" v-model="scope" />
+			<TabButtons :buttons="scopeTabs" v-model="scope" />
 		</div>
 		<!-- flex parent so ListView (whose root is flex-1) fills the height, which
 		lets the empty state center vertically instead of collapsing to the top -->

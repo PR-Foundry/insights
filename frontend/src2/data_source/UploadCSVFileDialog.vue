@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { call, FileUploader, toast } from 'frappe-ui'
+import { FileUploader, call } from 'frappe-ui'
 import { __ } from '../translation'
 import { FileUp } from 'lucide-vue-next'
 import { computed, reactive, ref } from 'vue'
 import DataTable from '../components/DataTable.vue'
 import { QueryResultColumn, QueryResultRow } from '../types/query.types'
+import { createToast } from '../helpers/toasts'
 
 const show = defineModel()
 
@@ -32,8 +33,10 @@ function uploadFile(file: File) {
 			csvData.totalRowCount = data.total_rows
 		})
 		.catch((error: any) => {
-			toast.error(__('Upload Failed'), {
-				description: error?.message || __('Failed to process uploaded file'),
+			createToast({
+				title: __('Upload Failed'),
+				message: error?.message || __('Failed to process uploaded file'),
+				variant: 'error',
 			})
 			fileUploaded.value = false
 			throw error
@@ -57,13 +60,17 @@ function importCSVData() {
 		tablename: csvData.tablename,
 	})
 		.then(() => {
-			toast.success(__('Table Imported'), {
-				description: __(`Table '{0}' imported successfully`, csvData.tablename),
+			createToast({
+				title: __('Table Imported'),
+				message: __(`Table '{0}' imported successfully`, csvData.tablename),
+				variant: 'success',
 			})
 		})
 		.catch((error: any) => {
-			toast.error(__('Import Failed'), {
-				description: error?.message || __('Failed to import table'),
+			createToast({
+				title: __('Import Failed'),
+				message: error?.message || __('Failed to import table'),
+				variant: 'error',
 			})
 		})
 		.finally(() => {
@@ -97,7 +104,7 @@ function resetFile() {
 			>
 				<template #default="{ progress, uploading, openFileSelector }">
 					<div
-						class="flex cursor-pointer flex-col items-center justify-center gap-3 rounded-4 border border-dashed border-outline-gray-3 p-12 text-base"
+						class="flex cursor-pointer flex-col items-center justify-center gap-3 rounded border border-dashed border-outline-gray-3 p-12 text-base"
 						@click="openFileSelector"
 					>
 						<FileUp
@@ -131,7 +138,7 @@ function resetFile() {
 					<FormControl class="w-fit" label="Table Name" v-model="csvData.tablename" />
 				</div>
 				<div
-					class="relative flex h-[30rem] w-full flex-col overflow-hidden rounded-4 border bg-surface-base"
+					class="relative flex h-[30rem] w-full flex-col overflow-hidden rounded border bg-surface-base"
 				>
 					<DataTable
 						:columns="csvData.columns"

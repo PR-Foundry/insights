@@ -6,6 +6,7 @@ import os
 import frappe
 from frappe.handler import is_valid_http_method, is_whitelisted
 from frappe.monitor import add_data_to_monitor
+from frappe.utils import cint
 
 from insights.api.shared import get_public_permission_user, is_public
 from insights.decorators import insights_whitelist
@@ -18,9 +19,8 @@ from insights.insights.doctype.insights_table_v3.insights_table_v3 import (
 from insights.insights.doctype.insights_team.insights_team import (
     check_data_source_permission,
 )
-from insights.insights.query_builders.sql_functions import get_fiscal_year_start_date
 from insights.permission_user import permission_user
-from insights.utils import get_currency_symbols, get_owned_file
+from insights.utils import get_owned_file
 
 
 @insights_whitelist()
@@ -28,37 +28,42 @@ def get_app_version():
     return frappe.get_attr("insights" + ".__version__")
 
 
-@frappe.whitelist(allow_guest=True)  # nosemgrep - the payload is the site's country and
-# currency, which a public dashboard already prints
+@frappe.whitelist(allow_guest=True)  # nosemgrep - the payload is the site's currency and
+# country, which a public dashboard already prints
 def get_site_info():
     """Settings of the site, not of whoever reads it. A guest opening a public
     dashboard needs them to print an amount the way the workbook does."""
     return {
         "country": frappe.db.get_single_value("System Settings", "country"),
-        # The calendar the site counts by. A span the browser resolves (a week, a
-        # fiscal year to date) has to land on the days the server's `get_window`
-        # lands on. Both are site settings, not the reader's, so a guest gets them too.
-        "week_starts_on": frappe.db.get_single_value("Insights Settings", "week_starts_on") or "Monday",
-        # through the server's own fallback, so an unset field does not put the
-        # two calendars a quarter apart
-        "fiscal_year_start": get_fiscal_year_start_date().isoformat(),
         **get_currency_info(),
     }
 
 
 def get_currency_info():
-    """The site's currency: the code a measure that names no column prints in.
-
-    Its symbol is the one entry the client starts with.
+    """The site's display currency, as the client needs it to print an amount.
 
     The `currency` global default covers a site with ERPNext and one without:
     ERPNext's Global Defaults writes `default_currency` into it, and plain Frappe
-    writes `System Settings.currency` into it.
+    writes `System Settings.currency` into it. `hide_currency_symbol` empties the
+    symbol, which is how a site says amounts print bare.
     """
     # System Settings writes the default only when the field changes, so read the
     # field too — a site installed with a currency has never "changed" it
     currency = frappe.db.get_default("currency") or frappe.db.get_single_value("System Settings", "currency")
-    return {"currency": currency or None, "currency_symbols": get_currency_symbols([currency])}
+    if not currency:
+        return {"currency": None, "currency_symbol": "", "currency_symbol_on_right": False}
+
+    hidden = cint(frappe.defaults.get_global_default("hide_currency_symbol"))
+    symbol, on_right = frappe.db.get_value("Currency", currency, ["symbol", "symbol_on_right"]) or (
+        None,
+        None,
+    )
+    return {
+        "currency": currency,
+        # a currency with no symbol of its own prints as its code, the way fmt_money does
+        "currency_symbol": "" if hidden else (symbol or currency),
+        "currency_symbol_on_right": bool(on_right),
+    }
 
 
 @insights_whitelist()
@@ -89,6 +94,8 @@ def get_user_info():
         "locale": locale,
         "has_desk_access": user.get("user_type") == "System User",
         "has_demo_data": has_demo_data,
+        "fiscal_year_start": frappe.db.get_single_value("Insights Settings", "fiscal_year_start")
+        or "01-04-2020",
     }
 
 
@@ -286,22 +293,15 @@ def run_doc_method(method: str, docs: dict | str, args: dict | None = None):
 # its own parameters to these methods - `active_operation_idx` drives the step
 # preview, and reshapes the query - and those are for the builder, not for the
 # published document.
-# `dashboard_items` is deliberately absent: a filter link names a query and a
-# column, so a routing table from the request is a reader naming columns nobody
-# published. A share link names the `dashboard` it opens instead, and the server
-# reads that dashboard's stored links. `card_filters` stays, because a card
-# filter names a column the card already draws and lands on that card's own
-# query.
 PUBLIC_METHOD_ARGS = {
-    ("Insights Chart v3", "get_data"): {"page", "page_size", "dashboard", "filters", "card_filters"},
+    ("Insights Query v3", "execute"): {"adhoc_filters", "page", "page_size"},
+    ("Insights Query v3", "download_results"): {"format", "adhoc_filters"},
     ("Insights Dashboard v3", "get_distinct_column_values"): {
-        "filter_name",
+        "query",
+        "column_name",
         "search_term",
-        "filter_context",
+        "adhoc_filters",
     },
-    ("Insights Dashboard v3", "get_card_column_values"): {"chart", "column", "search_term"},
-    ("Insights Dashboard v3", "get_card_column_range"): {"chart", "column"},
-    ("Insights Dashboard v3", "get_filter_column_range"): {"filter_name", "filter_context"},
     ("Insights Dashboard v3", "track_view"): set(),
 }
 
